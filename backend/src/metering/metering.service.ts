@@ -2,6 +2,7 @@ import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMeterReadingDto } from './dto/create-meter-reading.dto';
 import { TokenService } from '../token/token.service';
+import { EventsGateway } from '../common/gateways/events.gateway';
 
 @Injectable()
 export class MeteringService {
@@ -9,6 +10,7 @@ export class MeteringService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly eventsGateway: EventsGateway,
     @Optional() @Inject(TokenService) private readonly tokenService?: TokenService,
   ) {}
 
@@ -37,8 +39,21 @@ export class MeteringService {
         );
       } catch (error) {
         this.logger.error(`EPC 발행 실패: ${error.message}`);
+        // EPC 발행 실패는 미터링 데이터 저장에 영향을 주지 않음
       }
     }
+
+    // WebSocket: 미터링 데이터 수신 알림
+    this.eventsGateway.emitMeterReading({
+      id: reading.id,
+      userId,
+      production: reading.production,
+      consumption: reading.consumption,
+      source: reading.source,
+      deviceId: reading.deviceId,
+      timestamp: reading.timestamp,
+      netEnergy: reading.production - reading.consumption,
+    });
 
     return reading;
   }

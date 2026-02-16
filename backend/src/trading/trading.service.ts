@@ -1,13 +1,17 @@
-import { Injectable, NotFoundException, Inject, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, Optional, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderStatus, OrderType, PaymentCurrency, TradeStatus } from '@prisma/client';
 import { TokenService } from '../token/token.service';
+import { EventsGateway } from '../common/gateways/events.gateway';
 
 @Injectable()
 export class TradingService {
+  private readonly logger = new Logger(TradingService.name);
+
   constructor(
     private readonly prisma: PrismaService,
+    private readonly eventsGateway: EventsGateway,
     @Optional() @Inject(TokenService) private readonly tokenService?: TokenService,
   ) {}
 
@@ -35,8 +39,23 @@ export class TradingService {
       this.tokenService
     ) {
       const requiredEPC = dto.quantity * dto.price;
-      await this.tokenService.lockForTrade(userId, requiredEPC, order.id);
+      try {
+        await this.tokenService.lockForTrade(userId, requiredEPC, order.id);
+      } catch (error) {
+        // 잠금 실패 시 주문 취소 (보상 트랜잭션)
+        await this.prisma.order.update({
+          where: { id: order.id },
+          data: { status: OrderStatus.CANCELLED },
+        });
+        this.logger.error(`EPC 잠금 실패로 주문 취소 (${order.id}): ${error.message}`);
+        throw error;
+      }
     }
+
+    this.eventsGateway.emitOrderUpdated({
+      action: 'created',
+      order: { id: order.id, type: order.type, status: order.status },
+    });
 
     // 자동 매칭 시도
     await this.tryMatch(order.id);
@@ -96,8 +115,17 @@ export class TradingService {
       this.tokenService
     ) {
       const lockedAmount = order.remainingQty * order.price;
-      await this.tokenService.unlockFromCancelledTrade(userId, lockedAmount, id);
+      try {
+        await this.tokenService.unlockFromCancelledTrade(userId, lockedAmount, id);
+      } catch (error) {
+        this.logger.error(`EPC 잠금 해제 실패 (주문 ${id}): ${error.message}`);
+      }
     }
+
+    this.eventsGateway.emitOrderUpdated({
+      action: 'cancelled',
+      order: { id: updated.id, type: updated.type, status: updated.status },
+    });
 
     return updated;
   }
@@ -191,38 +219,59 @@ export class TradingService {
           ? [order.id, match.id, order.userId, match.userId]
           : [match.id, order.id, match.userId, order.userId];
 
-      await this.prisma.$transaction([
-        this.prisma.trade.create({
-          data: {
-            buyOrderId,
-            sellOrderId,
-            buyerId,
-            sellerId,
-            energySource: order.energySource,
-            quantity: tradeQty,
-            price: tradePrice,
-            totalAmount: tradeQty * tradePrice,
-            paymentCurrency: order.paymentCurrency,
-            status: TradeStatus.MATCHED,
-          },
-        }),
-        this.prisma.order.update({
-          where: { id: match.id },
-          data: {
-            remainingQty: match.remainingQty - tradeQty,
-            status:
-              match.remainingQty - tradeQty <= 0
-                ? OrderStatus.FILLED
-                : OrderStatus.PARTIALLY_FILLED,
-          },
-        }),
-      ]);
+      try {
+        const [trade] = await this.prisma.$transaction([
+          this.prisma.trade.create({
+            data: {
+              buyOrderId,
+              sellOrderId,
+              buyerId,
+              sellerId,
+              energySource: order.energySource,
+              quantity: tradeQty,
+              price: tradePrice,
+              totalAmount: tradeQty * tradePrice,
+              paymentCurrency: order.paymentCurrency,
+              status: TradeStatus.MATCHED,
+            },
+          }),
+          this.prisma.order.update({
+            where: { id: match.id },
+            data: {
+              remainingQty: match.remainingQty - tradeQty,
+              status:
+                match.remainingQty - tradeQty <= 0
+                  ? OrderStatus.FILLED
+                  : OrderStatus.PARTIALLY_FILLED,
+            },
+          }),
+        ]);
+
+        // WebSocket: 거래 체결 알림
+        this.eventsGateway.emitTradeMatched({
+          tradeId: trade.id,
+          buyerId,
+          sellerId,
+          energySource: order.energySource,
+          quantity: tradeQty,
+          price: tradePrice,
+          totalAmount: tradeQty * tradePrice,
+          paymentCurrency: order.paymentCurrency,
+        });
+
+        this.logger.log(
+          `거래 체결: ${tradeQty} kWh @ ${tradePrice} ${order.paymentCurrency} (${order.energySource})`,
+        );
+      } catch (error) {
+        this.logger.error(`매칭 트랜잭션 실패 (주문 ${match.id}): ${error.message}`);
+        continue;
+      }
 
       remainingQty -= tradeQty;
     }
 
     // 원래 주문 업데이트
-    await this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         remainingQty,
@@ -234,5 +283,18 @@ export class TradingService {
               : OrderStatus.PENDING,
       },
     });
+
+    // 주문 상태가 변경되었으면 이벤트 발행
+    if (updatedOrder.status !== order.status) {
+      this.eventsGateway.emitOrderUpdated({
+        action: 'status_changed',
+        order: {
+          id: updatedOrder.id,
+          type: updatedOrder.type,
+          status: updatedOrder.status,
+          remainingQty: updatedOrder.remainingQty,
+        },
+      });
+    }
   }
 }
