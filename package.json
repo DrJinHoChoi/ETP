@@ -14,7 +14,10 @@
     "db:generate": "pnpm --filter backend prisma:generate",
     "db:seed": "pnpm --filter backend prisma:seed",
     "docker:up": "docker compose -f docker/docker-compose.yml up -d",
-    "docker:down": "docker compose -f docker/docker-compose.yml down"
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "test": "pnpm --filter backend test && pnpm --filter frontend test",
+    "test:backend": "pnpm --filter backend test",
+    "test:frontend": "pnpm --filter frontend test"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

@@ -1,5 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 const navItems = [
   { path: '/', label: '대시보드', icon: '📊' },
@@ -15,6 +16,7 @@ const navItems = [
 export default function Layout() {
   const location = useLocation();
   const { user, logout } = useAuthStore();
+  useWebSocket();
 
   return (
     <div className="min-h-screen bg-gray-50">

@@ -11,7 +11,10 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node prisma/seed.ts",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage"
   },
   "dependencies": {
     "@etp/shared": "workspace:*",
@@ -42,13 +45,17 @@
   "devDependencies": {
     "@nestjs/cli": "^10.4.0",
     "@nestjs/schematics": "^10.2.0",
+    "@nestjs/testing": "^11.1.13",
     "@types/bcrypt": "^5.0.2",
     "@types/express": "^5.0.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^22.0.0",
     "@types/passport-jwt": "^4.0.1",
     "@types/uuid": "^11.0.0",
+    "jest": "^30.2.0",
     "prisma": "^6.3.0",
     "source-map-support": "^0.5.21",
+    "ts-jest": "^29.4.6",
     "ts-loader": "^9.5.0",
     "ts-node": "^10.9.0",
     "tsconfig-paths": "^4.2.0",
