@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -6,6 +6,7 @@ import {
 import { meteringService } from '../services/metering.service';
 import { Card, Button, StatCard, Badge } from '../components/ui';
 import { useToast } from '../components/ui/Toast';
+import { useSocketEvent } from '../hooks/useWebSocket';
 
 interface MeterReading {
   id: string;
@@ -34,7 +35,7 @@ export default function Metering() {
 
   useEffect(() => { loadReadings(); }, []);
 
-  const loadReadings = async () => {
+  const loadReadings = useCallback(async () => {
     setIsLoading(true);
     try {
       const data = await meteringService.getReadings();
@@ -44,7 +45,15 @@ export default function Metering() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // WebSocket: 새 미터링 데이터 수신 시 자동 새로고침
+  useSocketEvent('meter:reading', (data) => {
+    loadReadings();
+    if (data?.netEnergy !== undefined) {
+      toast('info', `미터링 수신: 순 에너지 ${data.netEnergy.toFixed(1)} kWh`);
+    }
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

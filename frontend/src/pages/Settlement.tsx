@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { settlementService } from '../services/settlement.service';
 import { Card, Badge, Button, StatCard } from '../components/ui';
 import { useToast } from '../components/ui/Toast';
+import { useSocketEvent } from '../hooks/useWebSocket';
 
 interface Settlement {
   id: string;
@@ -47,7 +48,7 @@ export default function Settlement() {
 
   useEffect(() => { loadData(); }, []);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [settList, settStats] = await Promise.all([
@@ -61,7 +62,17 @@ export default function Settlement() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // WebSocket: 정산 완료/실패 시 자동 새로고침
+  useSocketEvent('settlement:completed', (data) => {
+    loadData();
+    if (data?.action === 'confirmed') {
+      toast('success', '정산이 완료되었습니다');
+    } else if (data?.action === 'failed') {
+      toast('error', `정산 실패: ${data.reason || '알 수 없는 오류'}`);
+    }
+  });
 
   const handleConfirm = async (id: string) => {
     try {

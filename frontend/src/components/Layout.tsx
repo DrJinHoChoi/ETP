@@ -38,7 +38,7 @@ export default function Layout() {
   const location = useLocation();
   const { user, logout } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  useWebSocket();
+  const { connected } = useWebSocket();
 
   const roleName = user?.role === 'SUPPLIER' ? '공급자' : user?.role === 'CONSUMER' ? '수요자' : '관리자';
   const roleColor = user?.role === 'SUPPLIER' ? 'bg-emerald-100 text-emerald-700' : user?.role === 'CONSUMER' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700';
@@ -128,8 +128,8 @@ export default function Layout() {
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              실시간 연결
+              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
+              {connected ? '실시간 연결' : '연결 대기'}
             </div>
           </div>
         </header>

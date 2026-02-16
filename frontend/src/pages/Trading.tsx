@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { tradingService } from '../services/trading.service';
 import { useTokenStore } from '../store/tokenStore';
 import { Card, Badge, Button, StatCard } from '../components/ui';
 import { useToast } from '../components/ui/Toast';
+import { useSocketEvent } from '../hooks/useWebSocket';
 
 interface Order {
   id: string;
@@ -37,7 +38,16 @@ export default function Trading() {
   });
 
   useEffect(() => { loadOrders(); }, []);
-  const loadOrders = () => { tradingService.getOrders().then(setOrders).catch(console.error); };
+  const loadOrders = useCallback(() => {
+    tradingService.getOrders().then(setOrders).catch(console.error);
+  }, []);
+
+  // WebSocket: 주문 상태 변경 / 거래 체결 시 자동 새로고침
+  useSocketEvent('order:updated', loadOrders);
+  useSocketEvent('trade:matched', (data) => {
+    loadOrders();
+    toast('success', `거래 체결! ${data.quantity} kWh @ ${data.price}`);
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

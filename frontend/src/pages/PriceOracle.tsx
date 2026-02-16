@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, Area, AreaChart,
 } from 'recharts';
 import { oracleService } from '../services/oracle.service';
 import { Card, Badge, StatCard } from '../components/ui';
+import { useSocketEvent } from '../hooks/useWebSocket';
 
 interface PriceBasket {
   id: string;
@@ -21,13 +22,7 @@ export default function PriceOracle() {
   const [history, setHistory] = useState<PriceBasket[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [latest, hist] = await Promise.all([
         oracleService.getLatestPrice(),
@@ -40,7 +35,17 @@ export default function PriceOracle() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadData();
+    // Fallback polling (WebSocket이 연결되지 않을 때 대비)
+    const interval = setInterval(loadData, 120000);
+    return () => clearInterval(interval);
+  }, [loadData]);
+
+  // WebSocket: 가격 업데이트 시 즉시 반영 (polling 보완)
+  useSocketEvent('price:update', loadData);
 
   const chartData = history.map((p) => ({
     time: new Date(p.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),

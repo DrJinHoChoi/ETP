@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area,
@@ -8,6 +8,7 @@ import { analyticsService } from '../services/analytics.service';
 import { oracleService } from '../services/oracle.service';
 import { useTokenStore } from '../store/tokenStore';
 import { StatCard, Card } from '../components/ui';
+import { useSocketEvent } from '../hooks/useWebSocket';
 
 interface Stats {
   totalVolume: number;
@@ -49,9 +50,13 @@ export default function Dashboard() {
   const [latestPrice, setLatestPrice] = useState<PriceBasket | null>(null);
   const { balance, lockedBalance, fetchBalance } = useTokenStore();
 
-  useEffect(() => {
+  const loadStats = useCallback(() => {
     tradingService.getStats().then(setStats).catch(() => {});
     analyticsService.getPlatformStats().then(setPlatformStats).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadStats();
     analyticsService
       .getMonthlyTrend(new Date().getFullYear())
       .then((d: { monthly: MonthlyTrend[] }) => setMonthlyTrend(d.monthly))
@@ -59,6 +64,16 @@ export default function Dashboard() {
     oracleService.getLatestPrice().then(setLatestPrice).catch(() => {});
     fetchBalance();
   }, []);
+
+  // WebSocket 실시간 업데이트
+  useSocketEvent('trade:matched', loadStats);
+  useSocketEvent('order:updated', loadStats);
+  useSocketEvent('price:update', () => {
+    oracleService.getLatestPrice().then(setLatestPrice).catch(() => {});
+  });
+  useSocketEvent('stats:update', (data) => {
+    if (data) setStats((prev) => prev ? { ...prev, ...data } : data);
+  });
 
   const monthLabels = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   const chartData = monthlyTrend.map((m) => ({
