@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { BlockchainModule } from './blockchain/blockchain.module';
@@ -12,6 +14,7 @@ import { AggregatorModule } from './aggregator/aggregator.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { OracleModule } from './oracle/oracle.module';
 import { TokenModule } from './token/token.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -19,6 +22,7 @@ import { TokenModule } from './token/token.module';
       isGlobal: true,
       envFilePath: '../.env',
     }),
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     PrismaModule,
     CommonModule,
     BlockchainModule,
@@ -31,6 +35,10 @@ import { TokenModule } from './token/token.module';
     SettlementModule,
     AggregatorModule,
     AnalyticsModule,
+    HealthModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}
