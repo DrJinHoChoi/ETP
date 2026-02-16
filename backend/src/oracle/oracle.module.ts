@@ -5,9 +5,10 @@ import { OracleController } from './oracle.controller';
 import { EIAProvider } from './providers/eia.provider';
 import { ENTSOEProvider } from './providers/entsoe.provider';
 import { KPXProvider } from './providers/kpx.provider';
+import { BlockchainModule } from '../blockchain/blockchain.module';
 
 @Module({
-  imports: [ScheduleModule.forRoot()],
+  imports: [ScheduleModule.forRoot(), BlockchainModule],
   controllers: [OracleController],
   providers: [OracleService, EIAProvider, ENTSOEProvider, KPXProvider],
   exports: [OracleService],
