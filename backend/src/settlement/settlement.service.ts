@@ -1,12 +1,18 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { SettlementStatus, TradeStatus } from '@prisma/client';
+import { PaymentCurrency, SettlementStatus, TradeStatus } from '@prisma/client';
+import { TokenService } from '../token/token.service';
+import { OracleService } from '../oracle/oracle.service';
 
 const PLATFORM_FEE_RATE = 0.02; // 2% 수수료
 
 @Injectable()
 export class SettlementService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() @Inject(TokenService) private readonly tokenService?: TokenService,
+    @Optional() @Inject(OracleService) private readonly oracleService?: OracleService,
+  ) {}
 
   async createSettlement(tradeId: string) {
     const trade = await this.prisma.trade.findUnique({
@@ -19,6 +25,24 @@ export class SettlementService {
     const fee = trade.totalAmount * PLATFORM_FEE_RATE;
     const netAmount = trade.totalAmount - fee;
 
+    // EPC 정산: buyer→seller 이체 + 수수료 소각
+    if (trade.paymentCurrency === PaymentCurrency.EPC && this.tokenService) {
+      await this.tokenService.transfer(
+        trade.buyerId,
+        trade.sellerId,
+        netAmount,
+        'settlement',
+        tradeId,
+      );
+      await this.tokenService.burnForSettlement(trade.buyerId, fee, tradeId);
+    }
+
+    let epcPrice: number | null = null;
+    if (trade.paymentCurrency === PaymentCurrency.EPC && this.oracleService) {
+      const basket = await this.oracleService.getLatestBasketPrice();
+      epcPrice = basket?.weightedAvgPrice ?? null;
+    }
+
     return this.prisma.settlement.create({
       data: {
         tradeId: trade.id,
@@ -27,6 +51,8 @@ export class SettlementService {
         amount: trade.totalAmount,
         fee,
         netAmount,
+        paymentCurrency: trade.paymentCurrency,
+        epcPrice,
       },
     });
   }

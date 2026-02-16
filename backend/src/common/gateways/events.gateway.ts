@@ -53,4 +53,23 @@ export class EventsGateway
   emitStatsUpdate(stats: any) {
     this.server.emit('stats:update', stats);
   }
+
+  /** EPC 가격 업데이트 알림 */
+  emitPriceUpdate(price: any) {
+    this.server.emit('price:update', price);
+  }
+
+  /** 토큰 잔액 변경 알림 */
+  emitTokenBalanceUpdate(data: {
+    userId: string;
+    balance: number;
+    lockedBalance: number;
+  }) {
+    this.server.emit('token:balance', data);
+  }
+
+  /** REC 토큰 이벤트 */
+  emitRECTokenUpdate(data: any) {
+    this.server.emit('rec:update', data);
+  }
 }

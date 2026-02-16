@@ -10,6 +10,8 @@ import { MeteringModule } from './metering/metering.module';
 import { SettlementModule } from './settlement/settlement.module';
 import { AggregatorModule } from './aggregator/aggregator.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { OracleModule } from './oracle/oracle.module';
+import { TokenModule } from './token/token.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { AnalyticsModule } from './analytics/analytics.module';
     BlockchainModule,
     AuthModule,
     UsersModule,
+    OracleModule,
+    TokenModule,
     TradingModule,
     MeteringModule,
     SettlementModule,

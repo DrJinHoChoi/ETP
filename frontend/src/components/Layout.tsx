@@ -6,6 +6,9 @@ const navItems = [
   { path: '/trading', label: '전력거래', icon: '⚡' },
   { path: '/metering', label: '미터링', icon: '📈' },
   { path: '/settlement', label: '정산', icon: '💰' },
+  { path: '/wallet', label: 'EPC 지갑', icon: '🪙' },
+  { path: '/price-oracle', label: '가격 오라클', icon: '🌐' },
+  { path: '/rec-marketplace', label: 'REC 마켓', icon: '🌿' },
   { path: '/admin', label: '관리', icon: '⚙️' },
 ];
 

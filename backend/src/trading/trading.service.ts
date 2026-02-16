@@ -1,13 +1,19 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
-import { OrderStatus, OrderType, TradeStatus } from '@prisma/client';
+import { OrderStatus, OrderType, PaymentCurrency, TradeStatus } from '@prisma/client';
+import { TokenService } from '../token/token.service';
 
 @Injectable()
 export class TradingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() @Inject(TokenService) private readonly tokenService?: TokenService,
+  ) {}
 
   async createOrder(userId: string, dto: CreateOrderDto) {
+    const paymentCurrency = dto.paymentCurrency || PaymentCurrency.KRW;
+
     const order = await this.prisma.order.create({
       data: {
         userId,
@@ -16,10 +22,21 @@ export class TradingService {
         quantity: dto.quantity,
         price: dto.price,
         remainingQty: dto.quantity,
+        paymentCurrency,
         validFrom: new Date(dto.validFrom),
         validUntil: new Date(dto.validUntil),
       },
     });
+
+    // EPC 매수 주문: 필요 EPC 잠금
+    if (
+      paymentCurrency === PaymentCurrency.EPC &&
+      dto.type === OrderType.BUY &&
+      this.tokenService
+    ) {
+      const requiredEPC = dto.quantity * dto.price;
+      await this.tokenService.lockForTrade(userId, requiredEPC, order.id);
+    }
 
     // 자동 매칭 시도
     await this.tryMatch(order.id);
@@ -67,10 +84,22 @@ export class TradingService {
     if (!order) {
       throw new NotFoundException('취소 가능한 주문을 찾을 수 없습니다');
     }
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id },
       data: { status: OrderStatus.CANCELLED },
     });
+
+    // EPC 매수 주문 취소: 잠금 해제
+    if (
+      order.paymentCurrency === PaymentCurrency.EPC &&
+      order.type === OrderType.BUY &&
+      this.tokenService
+    ) {
+      const lockedAmount = order.remainingQty * order.price;
+      await this.tokenService.unlockFromCancelledTrade(userId, lockedAmount, id);
+    }
+
+    return updated;
   }
 
   async getTrades(userId?: string) {
@@ -136,6 +165,7 @@ export class TradingService {
       where: {
         type: oppositeType,
         energySource: order.energySource,
+        paymentCurrency: order.paymentCurrency,
         status: { in: [OrderStatus.PENDING, OrderStatus.PARTIALLY_FILLED] },
         remainingQty: { gt: 0 },
         price: priceCondition,
@@ -172,6 +202,7 @@ export class TradingService {
             quantity: tradeQty,
             price: tradePrice,
             totalAmount: tradeQty * tradePrice,
+            paymentCurrency: order.paymentCurrency,
             status: TradeStatus.MATCHED,
           },
         }),

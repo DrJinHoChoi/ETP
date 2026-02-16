@@ -1,13 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMeterReadingDto } from './dto/create-meter-reading.dto';
+import { TokenService } from '../token/token.service';
 
 @Injectable()
 export class MeteringService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(MeteringService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() @Inject(TokenService) private readonly tokenService?: TokenService,
+  ) {}
 
   async createReading(userId: string, dto: CreateMeterReadingDto) {
-    return this.prisma.meterReading.create({
+    const reading = await this.prisma.meterReading.create({
       data: {
         userId,
         production: dto.production,
@@ -17,6 +23,24 @@ export class MeteringService {
         timestamp: new Date(dto.timestamp),
       },
     });
+
+    // 발전량 > 0이면 EPC 자동 발행
+    if (dto.production > 0 && this.tokenService) {
+      try {
+        await this.tokenService.mintFromMeterReading(
+          userId,
+          dto.production,
+          reading.id,
+        );
+        this.logger.log(
+          `EPC ${dto.production} 발행 완료 (미터링: ${reading.id})`,
+        );
+      } catch (error) {
+        this.logger.error(`EPC 발행 실패: ${error.message}`);
+      }
+    }
+
+    return reading;
   }
 
   async getReadings(
