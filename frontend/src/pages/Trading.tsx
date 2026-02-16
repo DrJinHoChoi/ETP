@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { tradingService } from '../services/trading.service';
 import { useTokenStore } from '../store/tokenStore';
+import { Card, Badge, Button, StatCard } from '../components/ui';
+import { useToast } from '../components/ui/Toast';
 
 interface Order {
   id: string;
@@ -14,214 +16,161 @@ interface Order {
   createdAt: string;
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-  SOLAR: '태양광',
-  WIND: '풍력',
-  HYDRO: '수력',
-  BIOMASS: '바이오매스',
-  GEOTHERMAL: '지열',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  PENDING: '대기',
-  PARTIALLY_FILLED: '부분체결',
-  FILLED: '체결완료',
-  CANCELLED: '취소',
-  EXPIRED: '만료',
+const SOURCE_LABELS: Record<string, string> = { SOLAR: '태양광', WIND: '풍력', HYDRO: '수력', BIOMASS: '바이오매스', GEOTHERMAL: '지열' };
+const SOURCE_ICONS: Record<string, string> = { SOLAR: '☀️', WIND: '🌬️', HYDRO: '💧', BIOMASS: '🌿', GEOTHERMAL: '🌋' };
+const STATUS_MAP: Record<string, { text: string; variant: 'success' | 'warning' | 'error' | 'info' | 'neutral' }> = {
+  PENDING: { text: '대기', variant: 'warning' },
+  PARTIALLY_FILLED: { text: '부분체결', variant: 'info' },
+  FILLED: { text: '체결완료', variant: 'success' },
+  CANCELLED: { text: '취소', variant: 'error' },
+  EXPIRED: { text: '만료', variant: 'neutral' },
 };
 
 export default function Trading() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [showForm, setShowForm] = useState(false);
   const { availableBalance } = useTokenStore();
+  const { toast } = useToast();
   const [form, setForm] = useState({
-    type: 'BUY',
-    energySource: 'SOLAR',
-    quantity: 0,
-    price: 0,
-    paymentCurrency: 'KRW',
-    validFrom: '',
-    validUntil: '',
+    type: 'BUY', energySource: 'SOLAR', quantity: 0, price: 0,
+    paymentCurrency: 'KRW', validFrom: '', validUntil: '',
   });
 
-  useEffect(() => {
-    loadOrders();
-  }, []);
-
-  const loadOrders = () => {
-    tradingService.getOrders().then(setOrders).catch(console.error);
-  };
+  useEffect(() => { loadOrders(); }, []);
+  const loadOrders = () => { tradingService.getOrders().then(setOrders).catch(console.error); };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await tradingService.createOrder(form);
       setShowForm(false);
+      toast('success', '주문이 성공적으로 생성되었습니다');
       loadOrders();
-    } catch (err: any) {
-      alert(err.response?.data?.message || '주문 생성 실패');
-    }
+    } catch (err: any) { toast('error', err.response?.data?.message || '주문 생성 실패'); }
   };
 
   const handleCancel = async (id: string) => {
-    if (!confirm('이 주문을 취소하시겠습니까?')) return;
     try {
       await tradingService.cancelOrder(id);
+      toast('info', '주문이 취소되었습니다');
       loadOrders();
-    } catch (err: any) {
-      alert(err.response?.data?.message || '주문 취소 실패');
-    }
+    } catch (err: any) { toast('error', err.response?.data?.message || '주문 취소 실패'); }
   };
 
-  const epcTotal = form.type === 'BUY' && form.paymentCurrency === 'EPC'
-    ? form.quantity * form.price
-    : 0;
+  const buyOrders = orders.filter((o) => o.type === 'BUY').length;
+  const sellOrders = orders.filter((o) => o.type === 'SELL').length;
+  const pendingOrders = orders.filter((o) => o.status === 'PENDING').length;
+  const epcTotal = form.type === 'BUY' && form.paymentCurrency === 'EPC' ? form.quantity * form.price : 0;
+  const inputClass = "w-full px-3.5 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 slide-up">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">전력 거래</h1>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors"
-        >
-          {showForm ? '취소' : '+ 새 주문'}
-        </button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">전력 거래</h1>
+          <p className="text-sm text-gray-500 mt-1">전력 매수/매도 주문을 관리하세요</p>
+        </div>
+        <Button onClick={() => setShowForm(!showForm)} variant={showForm ? 'secondary' : 'primary'}>
+          {showForm ? '닫기' : '+ 새 주문'}
+        </Button>
       </div>
 
-      {/* Order Form */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard title="총 주문" value={`${orders.length}건`} icon={<span>📋</span>} />
+        <StatCard title="매수 주문" value={`${buyOrders}건`} icon={<span>📈</span>} />
+        <StatCard title="매도 주문" value={`${sellOrders}건`} icon={<span>📉</span>} />
+        <StatCard title="대기 중" value={`${pendingOrders}건`} icon={<span>⏳</span>} />
+      </div>
+
       {showForm && (
-        <div className="bg-white p-6 rounded-xl shadow-sm border">
-          <h3 className="text-lg font-semibold mb-4">주문 생성</h3>
-          <form
-            onSubmit={handleSubmit}
-            className="grid grid-cols-1 md:grid-cols-2 gap-4"
-          >
+        <Card title="주문 생성" className="animate-in">
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">주문 유형</label>
-              <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))} className="w-full px-3 py-2 border rounded-lg">
-                <option value="BUY">매수 (구매)</option>
-                <option value="SELL">매도 (판매)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">에너지원</label>
-              <select value={form.energySource} onChange={(e) => setForm((f) => ({ ...f, energySource: e.target.value }))} className="w-full px-3 py-2 border rounded-lg">
-                {Object.entries(SOURCE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">주문 유형</label>
+              <div className="grid grid-cols-2 gap-3">
+                {(['BUY', 'SELL'] as const).map((t) => (
+                  <button key={t} type="button" onClick={() => setForm((f) => ({ ...f, type: t }))}
+                    className={`p-3 rounded-lg border-2 text-center transition-all ${form.type === t ? (t === 'BUY' ? 'border-blue-500 bg-blue-50' : 'border-red-500 bg-red-50') : 'border-gray-200 hover:border-gray-300'}`}>
+                    <span className="text-xl">{t === 'BUY' ? '📈' : '📉'}</span>
+                    <p className="text-sm font-semibold mt-1">{t === 'BUY' ? '매수' : '매도'}</p>
+                  </button>
                 ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">에너지원</label>
+              <select value={form.energySource} onChange={(e) => setForm((f) => ({ ...f, energySource: e.target.value }))} className={inputClass}>
+                {Object.entries(SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{SOURCE_ICONS[k]} {v}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">수량 (kWh)</label>
-              <input type="number" min="1" value={form.quantity || ''} onChange={(e) => setForm((f) => ({ ...f, quantity: Number(e.target.value) }))} className="w-full px-3 py-2 border rounded-lg" required />
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">수량 (kWh)</label>
+              <input type="number" min="1" value={form.quantity || ''} onChange={(e) => setForm((f) => ({ ...f, quantity: Number(e.target.value) }))} className={inputClass} required />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                단가 ({form.paymentCurrency === 'EPC' ? 'EPC/kWh' : '원/kWh'})
-              </label>
-              <input type="number" min="0" step="0.1" value={form.price || ''} onChange={(e) => setForm((f) => ({ ...f, price: Number(e.target.value) }))} className="w-full px-3 py-2 border rounded-lg" required />
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">단가 ({form.paymentCurrency === 'EPC' ? 'EPC/kWh' : '원/kWh'})</label>
+              <input type="number" min="0" step="0.1" value={form.price || ''} onChange={(e) => setForm((f) => ({ ...f, price: Number(e.target.value) }))} className={inputClass} required />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">결제 수단</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">결제 수단</label>
               <div className="flex bg-gray-100 rounded-lg p-1">
-                <button
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, paymentCurrency: 'KRW' }))}
-                  className={`flex-1 px-3 py-2 text-sm rounded-md transition-colors ${form.paymentCurrency === 'KRW' ? 'bg-white shadow-sm font-medium' : 'text-gray-500'}`}
-                >
-                  KRW (원)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, paymentCurrency: 'EPC' }))}
-                  className={`flex-1 px-3 py-2 text-sm rounded-md transition-colors ${form.paymentCurrency === 'EPC' ? 'bg-white shadow-sm font-medium text-purple-700' : 'text-gray-500'}`}
-                >
-                  EPC 토큰
-                </button>
+                {(['KRW', 'EPC'] as const).map((c) => (
+                  <button key={c} type="button" onClick={() => setForm((f) => ({ ...f, paymentCurrency: c }))}
+                    className={`flex-1 px-3 py-2.5 text-sm rounded-lg transition-all ${form.paymentCurrency === c ? 'bg-white shadow-sm font-semibold' : 'text-gray-500'}`}>
+                    {c === 'KRW' ? '🇰🇷 KRW' : '🪙 EPC'}
+                  </button>
+                ))}
               </div>
               {form.paymentCurrency === 'EPC' && (
-                <p className="text-xs text-gray-500 mt-1">
-                  가용 잔액: {availableBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })} EPC
-                  {epcTotal > 0 && ` | 필요: ${epcTotal.toLocaleString()} EPC`}
-                </p>
+                <p className="text-xs text-gray-500 mt-1.5">가용: {availableBalance.toLocaleString()} EPC{epcTotal > 0 && ` | 필요: ${epcTotal.toLocaleString()} EPC`}</p>
               )}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">유효 시작일</label>
-              <input type="datetime-local" value={form.validFrom} onChange={(e) => setForm((f) => ({ ...f, validFrom: e.target.value }))} className="w-full px-3 py-2 border rounded-lg" required />
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">유효기간</label>
+              <div className="grid grid-cols-2 gap-2">
+                <input type="datetime-local" value={form.validFrom} onChange={(e) => setForm((f) => ({ ...f, validFrom: e.target.value }))} className={inputClass} required />
+                <input type="datetime-local" value={form.validUntil} onChange={(e) => setForm((f) => ({ ...f, validUntil: e.target.value }))} className={inputClass} required />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">유효 종료일</label>
-              <input type="datetime-local" value={form.validUntil} onChange={(e) => setForm((f) => ({ ...f, validUntil: e.target.value }))} className="w-full px-3 py-2 border rounded-lg" required />
-            </div>
-            <div className="flex items-end">
-              <button type="submit" className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700">주문 제출</button>
+            <div className="md:col-span-2 flex justify-end">
+              <Button type="submit" size="lg">주문 제출</Button>
             </div>
           </form>
-        </div>
+        </Card>
       )}
 
-      {/* Orders Table */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-500">유형</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-500">에너지원</th>
-              <th className="text-right px-4 py-3 text-sm font-medium text-gray-500">수량 (kWh)</th>
-              <th className="text-right px-4 py-3 text-sm font-medium text-gray-500">단가</th>
-              <th className="text-right px-4 py-3 text-sm font-medium text-gray-500">잔량</th>
-              <th className="text-center px-4 py-3 text-sm font-medium text-gray-500">결제</th>
-              <th className="text-center px-4 py-3 text-sm font-medium text-gray-500">상태</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-500">생성일</th>
-              <th className="text-center px-4 py-3 text-sm font-medium text-gray-500">작업</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {orders.map((order) => (
-              <tr key={order.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-1 text-xs rounded-full ${order.type === 'BUY' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
-                    {order.type === 'BUY' ? '매수' : '매도'}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm">{SOURCE_LABELS[order.energySource] || order.energySource}</td>
-                <td className="px-4 py-3 text-sm text-right">{order.quantity.toLocaleString()}</td>
-                <td className="px-4 py-3 text-sm text-right">
-                  {order.price.toLocaleString()} {order.paymentCurrency === 'EPC' ? 'EPC' : '원'}
-                </td>
-                <td className="px-4 py-3 text-sm text-right">{order.remainingQty.toLocaleString()}</td>
-                <td className="px-4 py-3 text-center">
-                  <span className={`px-2 py-1 text-xs rounded-full ${order.paymentCurrency === 'EPC' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
-                    {order.paymentCurrency}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-700">
-                    {STATUS_LABELS[order.status] || order.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-500">
-                  {new Date(order.createdAt).toLocaleDateString('ko-KR')}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  {order.status === 'PENDING' && (
-                    <button onClick={() => handleCancel(order.id)} className="text-xs text-red-600 hover:text-red-800 font-medium">
-                      취소
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {orders.length === 0 && (
+      <Card title="주문 내역" padding={false}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b">
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-gray-400">주문 내역이 없습니다</td>
+                {['유형','에너지원','수량','단가','잔량','결제','상태','생성일','작업'].map((h) => (
+                  <th key={h} className={`px-4 py-3 font-semibold text-gray-600 ${['수량','단가','잔량'].includes(h) ? 'text-right' : ['결제','상태','작업'].includes(h) ? 'text-center' : 'text-left'}`}>{h}</th>
+                ))}
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y">
+              {orders.length === 0 ? (
+                <tr><td colSpan={9} className="px-4 py-16 text-center text-gray-400"><span className="text-3xl block mb-2">📋</span>주문 내역이 없습니다</td></tr>
+              ) : orders.map((o) => (
+                <tr key={o.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3"><Badge variant={o.type === 'BUY' ? 'info' : 'error'} dot>{o.type === 'BUY' ? '매수' : '매도'}</Badge></td>
+                  <td className="px-4 py-3">{SOURCE_ICONS[o.energySource]} {SOURCE_LABELS[o.energySource]}</td>
+                  <td className="px-4 py-3 text-right font-medium">{o.quantity.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right">{o.price.toLocaleString()} {o.paymentCurrency === 'EPC' ? 'EPC' : '원'}</td>
+                  <td className="px-4 py-3 text-right text-gray-500">{o.remainingQty.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-center"><Badge variant={o.paymentCurrency === 'EPC' ? 'primary' : 'neutral'}>{o.paymentCurrency}</Badge></td>
+                  <td className="px-4 py-3 text-center"><Badge variant={STATUS_MAP[o.status]?.variant || 'neutral'} dot>{STATUS_MAP[o.status]?.text || o.status}</Badge></td>
+                  <td className="px-4 py-3 text-gray-500">{new Date(o.createdAt).toLocaleDateString('ko-KR')}</td>
+                  <td className="px-4 py-3 text-center">
+                    {o.status === 'PENDING' && <Button variant="ghost" size="sm" onClick={() => handleCancel(o.id)}><span className="text-red-600">취소</span></Button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }
