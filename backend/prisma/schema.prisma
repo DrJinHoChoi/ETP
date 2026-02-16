@@ -1,0 +1,246 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========== 사용자 ==========
+
+enum UserRole {
+  SUPPLIER
+  CONSUMER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  password     String
+  name         String
+  role         UserRole
+  organization String
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  didCredential   DIDCredential?
+  orders          Order[]
+  meterReadings   MeterReading[]
+  buyTrades       Trade[]          @relation("BuyerTrades")
+  sellTrades      Trade[]          @relation("SellerTrades")
+  buySettlements  Settlement[]     @relation("BuyerSettlements")
+  sellSettlements Settlement[]     @relation("SellerSettlements")
+  supplierCerts   RECCertificate[] @relation("SupplierCerts")
+  consumerCerts   RECCertificate[] @relation("ConsumerCerts")
+
+  @@map("users")
+}
+
+// ========== DID 인증 ==========
+
+enum DIDStatus {
+  ACTIVE
+  REVOKED
+}
+
+model DIDCredential {
+  id        String    @id @default(uuid())
+  userId    String    @unique @map("user_id")
+  did       String    @unique
+  publicKey String    @map("public_key")
+  status    DIDStatus @default(ACTIVE)
+  issuedAt  DateTime  @default(now()) @map("issued_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("did_credentials")
+}
+
+// ========== 전력 거래 ==========
+
+enum OrderType {
+  BUY
+  SELL
+}
+
+enum OrderStatus {
+  PENDING
+  PARTIALLY_FILLED
+  FILLED
+  CANCELLED
+  EXPIRED
+}
+
+enum EnergySource {
+  SOLAR
+  WIND
+  HYDRO
+  BIOMASS
+  GEOTHERMAL
+}
+
+model Order {
+  id           String       @id @default(uuid())
+  userId       String       @map("user_id")
+  type         OrderType
+  energySource EnergySource @map("energy_source")
+  quantity     Float        // kWh
+  price        Float        // KRW per kWh
+  remainingQty Float        @map("remaining_qty")
+  status       OrderStatus  @default(PENDING)
+  validFrom    DateTime     @map("valid_from")
+  validUntil   DateTime     @map("valid_until")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  buyTrades  Trade[] @relation("BuyOrderTrades")
+  sellTrades Trade[] @relation("SellOrderTrades")
+
+  @@index([type, status, energySource])
+  @@index([userId])
+  @@map("orders")
+}
+
+enum TradeStatus {
+  MATCHED
+  CONFIRMED
+  SETTLED
+  DISPUTED
+  CANCELLED
+}
+
+model Trade {
+  id           String       @id @default(uuid())
+  buyOrderId   String       @map("buy_order_id")
+  sellOrderId  String       @map("sell_order_id")
+  buyerId      String       @map("buyer_id")
+  sellerId     String       @map("seller_id")
+  energySource EnergySource @map("energy_source")
+  quantity     Float        // kWh
+  price        Float        // KRW per kWh
+  totalAmount  Float        @map("total_amount")
+  status       TradeStatus  @default(MATCHED)
+  txHash       String?      @map("tx_hash")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  buyOrder  Order @relation("BuyOrderTrades", fields: [buyOrderId], references: [id])
+  sellOrder Order @relation("SellOrderTrades", fields: [sellOrderId], references: [id])
+  buyer     User  @relation("BuyerTrades", fields: [buyerId], references: [id])
+  seller    User  @relation("SellerTrades", fields: [sellerId], references: [id])
+
+  settlement     Settlement?
+  recCertificate RECCertificate?
+
+  @@index([status])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@map("trades")
+}
+
+// ========== 미터링 ==========
+
+model MeterReading {
+  id          String       @id @default(uuid())
+  userId      String       @map("user_id")
+  timestamp   DateTime
+  production  Float        @default(0) // kWh
+  consumption Float        @default(0) // kWh
+  source      EnergySource
+  deviceId    String       @map("device_id")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, timestamp])
+  @@index([deviceId])
+  @@map("meter_readings")
+}
+
+// ========== 정산 ==========
+
+enum SettlementStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Settlement {
+  id        String           @id @default(uuid())
+  tradeId   String           @unique @map("trade_id")
+  buyerId   String           @map("buyer_id")
+  sellerId  String           @map("seller_id")
+  amount    Float            // KRW
+  fee       Float            @default(0)
+  netAmount Float            @map("net_amount")
+  status    SettlementStatus @default(PENDING)
+  txHash    String?          @map("tx_hash")
+  settledAt DateTime?        @map("settled_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  trade  Trade @relation(fields: [tradeId], references: [id])
+  buyer  User  @relation("BuyerSettlements", fields: [buyerId], references: [id])
+  seller User  @relation("SellerSettlements", fields: [sellerId], references: [id])
+
+  @@index([status])
+  @@map("settlements")
+}
+
+// ========== REC 인증서 ==========
+
+model RECCertificate {
+  id           String       @id @default(uuid())
+  tradeId      String       @unique @map("trade_id")
+  supplierId   String       @map("supplier_id")
+  consumerId   String       @map("consumer_id")
+  energySource EnergySource @map("energy_source")
+  quantity     Float        // kWh
+  issuedAt     DateTime     @default(now()) @map("issued_at")
+  validUntil   DateTime     @map("valid_until")
+  txHash       String?      @map("tx_hash")
+
+  trade    Trade @relation(fields: [tradeId], references: [id])
+  supplier User  @relation("SupplierCerts", fields: [supplierId], references: [id])
+  consumer User  @relation("ConsumerCerts", fields: [consumerId], references: [id])
+
+  @@map("rec_certificates")
+}
+
+// ========== 블록체인 트랜잭션 ==========
+
+enum BlockchainTxType {
+  DID
+  TRADE
+  SETTLEMENT
+  METERING
+}
+
+enum BlockchainTxStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+model BlockchainTransaction {
+  id        String             @id @default(uuid())
+  txHash    String             @unique @map("tx_hash")
+  type      BlockchainTxType
+  data      Json
+  status    BlockchainTxStatus @default(PENDING)
+  createdAt DateTime           @default(now()) @map("created_at")
+
+  @@index([type, status])
+  @@map("blockchain_transactions")
+}

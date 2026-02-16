@@ -1,0 +1,37 @@
+{
+  "name": "etp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RE100 전력 중개거래 플랫폼 (Energy Trading Platform)",
+  "scripts": {
+    "dev": "concurrently \"pnpm --filter backend dev\" \"pnpm --filter frontend dev\"",
+    "dev:backend": "pnpm --filter backend dev",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "build": "pnpm --filter shared build && pnpm --filter backend build && pnpm --filter frontend build",
+    "build:shared": "pnpm --filter shared build",
+    "lint": "pnpm -r lint",
+    "db:migrate": "pnpm --filter backend prisma:migrate",
+    "db:generate": "pnpm --filter backend prisma:generate",
+    "db:seed": "pnpm --filter backend prisma:seed",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@prisma/client",
+      "@prisma/engines",
+      "bcrypt",
+      "esbuild",
+      "prisma"
+    ]
+  }
+}
