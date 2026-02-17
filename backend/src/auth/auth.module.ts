@@ -5,6 +5,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { DIDSignatureService } from './services/did-signature.service';
+import { DIDAuthGuard } from './guards/did-auth.guard';
 import { BlockchainModule } from '../blockchain/blockchain.module';
 
 @Module({
@@ -23,7 +25,7 @@ import { BlockchainModule } from '../blockchain/blockchain.module';
     BlockchainModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService],
+  providers: [AuthService, JwtStrategy, DIDSignatureService, DIDAuthGuard],
+  exports: [AuthService, DIDSignatureService, DIDAuthGuard],
 })
 export class AuthModule {}

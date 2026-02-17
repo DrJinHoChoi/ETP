@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, UseGuards, Req, Delete } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -17,7 +17,7 @@ export class AuthController {
   }
 
   @Post('login')
-  @ApiOperation({ summary: '로그인' })
+  @ApiOperation({ summary: '이메일/비밀번호 로그인' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
@@ -29,6 +29,8 @@ export class AuthController {
   getProfile(@Req() req: any) {
     return this.authService.getProfile(req.user.id);
   }
+
+  // ========== DID 관리 ==========
 
   @Post('did/issue')
   @UseGuards(JwtAuthGuard)
@@ -42,5 +44,30 @@ export class AuthController {
   @ApiOperation({ summary: 'DID 검증' })
   verifyDID(@Param('did') did: string) {
     return this.authService.verifyDID(did);
+  }
+
+  @Delete('did/revoke')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'DID 폐기' })
+  revokeDID(@Req() req: any) {
+    return this.authService.revokeDID(req.user.id);
+  }
+
+  // ========== DID 챌린지-응답 인증 ==========
+
+  @Post('did/challenge')
+  @ApiOperation({ summary: 'DID 로그인 챌린지 요청 (1단계)' })
+  createDIDChallenge(@Body('did') did: string) {
+    return this.authService.createDIDChallenge(did);
+  }
+
+  @Post('did/login')
+  @ApiOperation({ summary: 'DID 로그인 서명 제출 (2단계)' })
+  loginWithDID(
+    @Body('did') did: string,
+    @Body('signature') signature: string,
+  ) {
+    return this.authService.loginWithDID(did, signature);
   }
 }

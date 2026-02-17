@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DIDBlockchainService } from '../blockchain/did-blockchain.service';
+import { DIDSignatureService } from './services/did-signature.service';
 
 jest.mock('bcrypt');
 
@@ -19,6 +20,7 @@ describe('AuthService', () => {
     dIDCredential: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      update: jest.fn(),
     },
   };
 
@@ -31,6 +33,20 @@ describe('AuthService', () => {
       did: 'did:etp:user-1',
       publicKey: 'mock-public-key',
     }),
+    revokeDID: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockSignatureService = {
+    generateChallenge: jest.fn().mockReturnValue({
+      challenge: 'mock-challenge-hex',
+      expiresAt: new Date(Date.now() + 300000),
+    }),
+    verifyChallengeResponse: jest.fn().mockResolvedValue({
+      valid: true,
+      did: 'did:etp:user-1',
+      userId: 'user-1',
+      message: '서명 검증 성공',
+    }),
   };
 
   beforeEach(async () => {
@@ -40,6 +56,7 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: JwtService, useValue: mockJwtService },
         { provide: DIDBlockchainService, useValue: mockDidService },
+        { provide: DIDSignatureService, useValue: mockSignatureService },
       ],
     }).compile();
 
@@ -234,6 +251,82 @@ describe('AuthService', () => {
 
       const result = await service.verifyDID('did:etp:user-1');
       expect(result.valid).toBe(false);
+    });
+  });
+
+  describe('createDIDChallenge', () => {
+    it('should create challenge for valid DID', async () => {
+      mockPrisma.dIDCredential.findUnique.mockResolvedValue({
+        did: 'did:etp:user-1',
+        status: 'ACTIVE',
+        user: { id: 'user-1', name: '테스트' },
+      });
+
+      const result = await service.createDIDChallenge('did:etp:user-1');
+      expect(result.challenge).toBe('mock-challenge-hex');
+      expect(result.did).toBe('did:etp:user-1');
+    });
+
+    it('should reject invalid DID', async () => {
+      mockPrisma.dIDCredential.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.createDIDChallenge('did:etp:invalid'),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('loginWithDID', () => {
+    it('should login with valid DID challenge-response', async () => {
+      // 먼저 챌린지 생성
+      mockPrisma.dIDCredential.findUnique.mockResolvedValue({
+        did: 'did:etp:user-1',
+        status: 'ACTIVE',
+        user: { id: 'user-1', name: '테스트' },
+      });
+      await service.createDIDChallenge('did:etp:user-1');
+
+      // DID 로그인
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: 'test@example.com',
+        name: '테스트',
+        role: 'SUPPLIER',
+        organization: '테스트기업',
+      });
+
+      const result = await service.loginWithDID('did:etp:user-1', 'valid-sig');
+      expect(result.accessToken).toBe('mock-jwt-token');
+      expect(result.authMethod).toBe('DID');
+    });
+
+    it('should reject without challenge', async () => {
+      await expect(
+        service.loginWithDID('did:etp:unknown', 'sig'),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('revokeDID', () => {
+    it('should revoke an active DID', async () => {
+      mockPrisma.dIDCredential.findUnique.mockResolvedValue({
+        did: 'did:etp:user-1',
+        userId: 'user-1',
+        status: 'ACTIVE',
+      });
+      mockPrisma.dIDCredential.update.mockResolvedValue({
+        did: 'did:etp:user-1',
+        status: 'REVOKED',
+      });
+
+      const result = await service.revokeDID('user-1');
+      expect(result.status).toBe('REVOKED');
+    });
+
+    it('should reject if no DID exists', async () => {
+      mockPrisma.dIDCredential.findUnique.mockResolvedValue(null);
+
+      await expect(service.revokeDID('user-1')).rejects.toThrow();
     });
   });
 });
