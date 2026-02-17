@@ -14,7 +14,7 @@ describe('Auth (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      .overrideGuard(ThrottlerGuard)
+      .overrideProvider(ThrottlerGuard)
       .useValue({ canActivate: () => true })
       .compile();
 
