@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useTokenStore } from '../store/tokenStore';
 import { tokenService } from '../services/token.service';
 import { Card, Badge, Button, StatCard } from '../components/ui';
 import { useToast } from '../components/ui/Toast';
+import { transferSchema, type TransferFormData } from '../lib/schemas/wallet.schema';
 
 interface TokenTx {
   id: string;
@@ -26,10 +29,11 @@ export default function Wallet() {
   const { balance, lockedBalance, availableBalance, isLoading, fetchBalance } = useTokenStore();
   const [transactions, setTransactions] = useState<TokenTx[]>([]);
   const [showTransfer, setShowTransfer] = useState(false);
-  const [transferTo, setTransferTo] = useState('');
-  const [transferAmount, setTransferAmount] = useState('');
-  const [transferReason, setTransferReason] = useState('');
   const { toast } = useToast();
+  const transferForm = useForm<TransferFormData>({
+    resolver: zodResolver(transferSchema),
+    defaultValues: { toUserId: '', amount: 0, reason: '' },
+  });
 
   useEffect(() => {
     fetchBalance();
@@ -41,21 +45,18 @@ export default function Wallet() {
       const data = await tokenService.getTransactions();
       setTransactions(data);
     } catch {
-      // ignore
+      toast('error', '거래 내역 로드 실패');
     }
   };
 
-  const handleTransfer = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleTransfer = async (data: TransferFormData) => {
     try {
       await tokenService.transfer({
-        toUserId: transferTo,
-        amount: parseFloat(transferAmount),
-        reason: transferReason || undefined,
+        toUserId: data.toUserId,
+        amount: data.amount,
+        reason: data.reason || undefined,
       });
-      setTransferTo('');
-      setTransferAmount('');
-      setTransferReason('');
+      transferForm.reset();
       setShowTransfer(false);
       toast('success', 'EPC 이체가 완료되었습니다');
       fetchBalance();
@@ -125,19 +126,21 @@ export default function Wallet() {
       {/* Transfer Form */}
       {showTransfer && (
         <Card title="EPC 이체" className="animate-in">
-          <form onSubmit={handleTransfer} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form onSubmit={transferForm.handleSubmit(handleTransfer)} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">수신자 ID</label>
-              <input type="text" placeholder="사용자 UUID" value={transferTo} onChange={(e) => setTransferTo(e.target.value)} className={inputClass} required />
+              <input type="text" placeholder="사용자 UUID" {...transferForm.register('toUserId')} className={inputClass} />
+              {transferForm.formState.errors.toUserId && <p className="text-xs text-red-500 mt-1">{transferForm.formState.errors.toUserId.message}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">수량 (EPC)</label>
-              <input type="number" placeholder="0.00" value={transferAmount} onChange={(e) => setTransferAmount(e.target.value)} className={inputClass} min="0.01" step="0.01" required />
+              <input type="number" placeholder="0.00" {...transferForm.register('amount', { valueAsNumber: true })} className={inputClass} min="0.01" step="0.01" />
+              {transferForm.formState.errors.amount && <p className="text-xs text-red-500 mt-1">{transferForm.formState.errors.amount.message}</p>}
               <p className="text-xs text-gray-400 mt-1">가용: {availableBalance.toLocaleString()} EPC</p>
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">사유 (선택)</label>
-              <input type="text" placeholder="이체 사유를 입력하세요" value={transferReason} onChange={(e) => setTransferReason(e.target.value)} className={inputClass} />
+              <input type="text" placeholder="이체 사유를 입력하세요" {...transferForm.register('reason')} className={inputClass} />
             </div>
             <div className="md:col-span-2 flex justify-end">
               <Button type="submit" size="lg">이체 실행</Button>

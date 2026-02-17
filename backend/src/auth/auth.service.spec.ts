@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DIDBlockchainService } from '../blockchain/did-blockchain.service';
 import { DIDSignatureService } from './services/did-signature.service';
+import { REDIS_CLIENT } from '../common/redis/redis.module';
 
 jest.mock('bcrypt');
 
@@ -49,6 +50,12 @@ describe('AuthService', () => {
     }),
   };
 
+  const mockRedis = {
+    get: jest.fn(),
+    set: jest.fn().mockResolvedValue('OK'),
+    del: jest.fn().mockResolvedValue(1),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -57,6 +64,7 @@ describe('AuthService', () => {
         { provide: JwtService, useValue: mockJwtService },
         { provide: DIDBlockchainService, useValue: mockDidService },
         { provide: DIDSignatureService, useValue: mockSignatureService },
+        { provide: REDIS_CLIENT, useValue: mockRedis },
       ],
     }).compile();
 
@@ -255,7 +263,7 @@ describe('AuthService', () => {
   });
 
   describe('createDIDChallenge', () => {
-    it('should create challenge for valid DID', async () => {
+    it('should create challenge and store in Redis', async () => {
       mockPrisma.dIDCredential.findUnique.mockResolvedValue({
         did: 'did:etp:user-1',
         status: 'ACTIVE',
@@ -265,6 +273,12 @@ describe('AuthService', () => {
       const result = await service.createDIDChallenge('did:etp:user-1');
       expect(result.challenge).toBe('mock-challenge-hex');
       expect(result.did).toBe('did:etp:user-1');
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        'did:challenge:did:etp:user-1',
+        expect.any(String),
+        'EX',
+        300,
+      );
     });
 
     it('should reject invalid DID', async () => {
@@ -278,15 +292,13 @@ describe('AuthService', () => {
 
   describe('loginWithDID', () => {
     it('should login with valid DID challenge-response', async () => {
-      // 먼저 챌린지 생성
-      mockPrisma.dIDCredential.findUnique.mockResolvedValue({
-        did: 'did:etp:user-1',
-        status: 'ACTIVE',
-        user: { id: 'user-1', name: '테스트' },
-      });
-      await service.createDIDChallenge('did:etp:user-1');
+      // Redis에 챌린지가 저장되어 있다고 mock
+      const challengeData = {
+        challenge: 'mock-challenge-hex',
+        expiresAt: new Date(Date.now() + 300000).toISOString(),
+      };
+      mockRedis.get.mockResolvedValue(JSON.stringify(challengeData));
 
-      // DID 로그인
       mockPrisma.user.findUnique.mockResolvedValue({
         id: 'user-1',
         email: 'test@example.com',
@@ -298,9 +310,12 @@ describe('AuthService', () => {
       const result = await service.loginWithDID('did:etp:user-1', 'valid-sig');
       expect(result.accessToken).toBe('mock-jwt-token');
       expect(result.authMethod).toBe('DID');
+      expect(mockRedis.del).toHaveBeenCalledWith('did:challenge:did:etp:user-1');
     });
 
-    it('should reject without challenge', async () => {
+    it('should reject without challenge in Redis', async () => {
+      mockRedis.get.mockResolvedValue(null);
+
       await expect(
         service.loginWithDID('did:etp:unknown', 'sig'),
       ).rejects.toThrow();

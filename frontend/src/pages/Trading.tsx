@@ -1,21 +1,18 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { tradingService } from '../services/trading.service';
 import { useTokenStore } from '../store/tokenStore';
 import { Card, Badge, Button, StatCard } from '../components/ui';
 import { useToast } from '../components/ui/Toast';
 import { useSocketEvent } from '../hooks/useWebSocket';
+import { exportToCSV } from '../lib/csv-export';
+import { createOrderSchema, type CreateOrderFormData } from '../lib/schemas/trading.schema';
+import type { IOrder } from '@etp/shared';
 
-interface Order {
-  id: string;
-  type: string;
-  energySource: string;
-  quantity: number;
-  price: number;
-  remainingQty: number;
-  paymentCurrency: string;
-  status: string;
+type Order = Pick<IOrder, 'id' | 'type' | 'energySource' | 'quantity' | 'price' | 'remainingQty' | 'paymentCurrency' | 'status'> & {
   createdAt: string;
-}
+};
 
 const SOURCE_LABELS: Record<string, string> = { SOLAR: '태양광', WIND: '풍력', HYDRO: '수력', BIOMASS: '바이오매스', GEOTHERMAL: '지열' };
 const SOURCE_ICONS: Record<string, string> = { SOLAR: '☀️', WIND: '🌬️', HYDRO: '💧', BIOMASS: '🌿', GEOTHERMAL: '🌋' };
@@ -32,15 +29,19 @@ export default function Trading() {
   const [showForm, setShowForm] = useState(false);
   const { availableBalance } = useTokenStore();
   const { toast } = useToast();
-  const [form, setForm] = useState({
-    type: 'BUY', energySource: 'SOLAR', quantity: 0, price: 0,
-    paymentCurrency: 'KRW', validFrom: '', validUntil: '',
+  const orderForm = useForm<CreateOrderFormData>({
+    resolver: zodResolver(createOrderSchema),
+    defaultValues: {
+      type: 'BUY', energySource: 'SOLAR', quantity: 0, price: 0,
+      paymentCurrency: 'KRW', validFrom: '', validUntil: '',
+    },
   });
+  const form = orderForm.watch();
 
   useEffect(() => { loadOrders(); }, []);
   const loadOrders = useCallback(() => {
-    tradingService.getOrders().then(setOrders).catch(console.error);
-  }, []);
+    tradingService.getOrders().then(setOrders).catch(() => toast('error', '주문 목록 로드 실패'));
+  }, [toast]);
 
   // WebSocket: 주문 상태 변경 / 거래 체결 시 자동 새로고침
   useSocketEvent('order:updated', loadOrders);
@@ -49,11 +50,11 @@ export default function Trading() {
     toast('success', `거래 체결! ${data.quantity} kWh @ ${data.price}`);
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (data: CreateOrderFormData) => {
     try {
-      await tradingService.createOrder(form);
+      await tradingService.createOrder(data);
       setShowForm(false);
+      orderForm.reset();
       toast('success', '주문이 성공적으로 생성되었습니다');
       loadOrders();
     } catch (err: any) { toast('error', err.response?.data?.message || '주문 생성 실패'); }
@@ -80,9 +81,25 @@ export default function Trading() {
           <h1 className="text-2xl font-bold text-gray-900">전력 거래</h1>
           <p className="text-sm text-gray-500 mt-1">전력 매수/매도 주문을 관리하세요</p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)} variant={showForm ? 'secondary' : 'primary'}>
-          {showForm ? '닫기' : '+ 새 주문'}
-        </Button>
+        <div className="flex gap-2">
+          {orders.length > 0 && (
+            <Button variant="secondary" onClick={() => exportToCSV(orders, [
+              { key: 'type', label: '유형', format: (v: string) => v === 'BUY' ? '매수' : '매도' },
+              { key: 'energySource', label: '에너지원', format: (v: string) => SOURCE_LABELS[v] || v },
+              { key: 'quantity', label: '수량(kWh)' },
+              { key: 'price', label: '단가' },
+              { key: 'remainingQty', label: '잔량' },
+              { key: 'paymentCurrency', label: '결제수단' },
+              { key: 'status', label: '상태', format: (v: string) => STATUS_MAP[v]?.text || v },
+              { key: 'createdAt', label: '생성일', format: (v: string) => new Date(v).toLocaleDateString('ko-KR') },
+            ], '주문내역')}>
+              CSV
+            </Button>
+          )}
+          <Button onClick={() => setShowForm(!showForm)} variant={showForm ? 'secondary' : 'primary'}>
+            {showForm ? '닫기' : '+ 새 주문'}
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -94,12 +111,12 @@ export default function Trading() {
 
       {showForm && (
         <Card title="주문 생성" className="animate-in">
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <form onSubmit={orderForm.handleSubmit(handleSubmit)} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">주문 유형</label>
               <div className="grid grid-cols-2 gap-3">
                 {(['BUY', 'SELL'] as const).map((t) => (
-                  <button key={t} type="button" onClick={() => setForm((f) => ({ ...f, type: t }))}
+                  <button key={t} type="button" onClick={() => orderForm.setValue('type', t)}
                     className={`p-3 rounded-lg border-2 text-center transition-all ${form.type === t ? (t === 'BUY' ? 'border-blue-500 bg-blue-50' : 'border-red-500 bg-red-50') : 'border-gray-200 hover:border-gray-300'}`}>
                     <span className="text-xl">{t === 'BUY' ? '📈' : '📉'}</span>
                     <p className="text-sm font-semibold mt-1">{t === 'BUY' ? '매수' : '매도'}</p>
@@ -109,23 +126,25 @@ export default function Trading() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">에너지원</label>
-              <select value={form.energySource} onChange={(e) => setForm((f) => ({ ...f, energySource: e.target.value }))} className={inputClass}>
+              <select {...orderForm.register('energySource')} className={inputClass}>
                 {Object.entries(SOURCE_LABELS).map(([k, v]) => <option key={k} value={k}>{SOURCE_ICONS[k]} {v}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">수량 (kWh)</label>
-              <input type="number" min="1" value={form.quantity || ''} onChange={(e) => setForm((f) => ({ ...f, quantity: Number(e.target.value) }))} className={inputClass} required />
+              <input type="number" min="1" {...orderForm.register('quantity', { valueAsNumber: true })} className={inputClass} />
+              {orderForm.formState.errors.quantity && <p className="text-xs text-red-500 mt-1">{orderForm.formState.errors.quantity.message}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">단가 ({form.paymentCurrency === 'EPC' ? 'EPC/kWh' : '원/kWh'})</label>
-              <input type="number" min="0" step="0.1" value={form.price || ''} onChange={(e) => setForm((f) => ({ ...f, price: Number(e.target.value) }))} className={inputClass} required />
+              <input type="number" min="0" step="0.1" {...orderForm.register('price', { valueAsNumber: true })} className={inputClass} />
+              {orderForm.formState.errors.price && <p className="text-xs text-red-500 mt-1">{orderForm.formState.errors.price.message}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">결제 수단</label>
               <div className="flex bg-gray-100 rounded-lg p-1">
                 {(['KRW', 'EPC'] as const).map((c) => (
-                  <button key={c} type="button" onClick={() => setForm((f) => ({ ...f, paymentCurrency: c }))}
+                  <button key={c} type="button" onClick={() => orderForm.setValue('paymentCurrency', c)}
                     className={`flex-1 px-3 py-2.5 text-sm rounded-lg transition-all ${form.paymentCurrency === c ? 'bg-white shadow-sm font-semibold' : 'text-gray-500'}`}>
                     {c === 'KRW' ? '🇰🇷 KRW' : '🪙 EPC'}
                   </button>
@@ -138,9 +157,11 @@ export default function Trading() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">유효기간</label>
               <div className="grid grid-cols-2 gap-2">
-                <input type="datetime-local" value={form.validFrom} onChange={(e) => setForm((f) => ({ ...f, validFrom: e.target.value }))} className={inputClass} required />
-                <input type="datetime-local" value={form.validUntil} onChange={(e) => setForm((f) => ({ ...f, validUntil: e.target.value }))} className={inputClass} required />
+                <input type="datetime-local" {...orderForm.register('validFrom')} className={inputClass} />
+                <input type="datetime-local" {...orderForm.register('validUntil')} className={inputClass} />
               </div>
+              {orderForm.formState.errors.validFrom && <p className="text-xs text-red-500 mt-1">{orderForm.formState.errors.validFrom.message}</p>}
+              {orderForm.formState.errors.validUntil && <p className="text-xs text-red-500 mt-1">{orderForm.formState.errors.validUntil.message}</p>}
             </div>
             <div className="md:col-span-2 flex justify-end">
               <Button type="submit" size="lg">주문 제출</Button>

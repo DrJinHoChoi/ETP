@@ -9,45 +9,18 @@ import { oracleService } from '../services/oracle.service';
 import { useTokenStore } from '../store/tokenStore';
 import { StatCard, Card } from '../components/ui';
 import { useSocketEvent } from '../hooks/useWebSocket';
-
-interface Stats {
-  totalVolume: number;
-  totalTrades: number;
-  totalAmount: number;
-  averagePrice: number;
-  todayVolume: number;
-  todayTrades: number;
-}
-
-interface MonthlyTrend {
-  month: number;
-  tradeCount: number;
-  totalVolume: number;
-  totalAmount: number;
-}
-
-interface PlatformStats {
-  users: { total: number; byRole: Record<string, number> };
-  orders: { total: number };
-  trades: { total: number; totalVolume: number; totalAmount: number; averagePrice: number };
-  settlements: { completed: number; totalAmount: number; totalFees: number };
-}
-
-interface PriceBasket {
-  weightedAvgPrice: number;
-  eiaPrice: number | null;
-  entsoePrice: number | null;
-  kpxPrice: number | null;
-  isStale: boolean;
-}
+import { relativeTime } from '../lib/format';
+import type { ITradingStats, IPlatformStats, IPriceBasketResponse, IMonthlyTrend, IRecentTrade } from '@etp/shared';
 
 const COLORS = ['#22c55e', '#3b82f6', '#8b5cf6'];
+const SOURCE_ICONS: Record<string, string> = { SOLAR: '☀️', WIND: '🌬️', HYDRO: '💧', BIOMASS: '🌿', GEOTHERMAL: '🌋' };
 
 export default function Dashboard() {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [platformStats, setPlatformStats] = useState<PlatformStats | null>(null);
-  const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrend[]>([]);
-  const [latestPrice, setLatestPrice] = useState<PriceBasket | null>(null);
+  const [stats, setStats] = useState<(ITradingStats & { totalAmount?: number }) | null>(null);
+  const [platformStats, setPlatformStats] = useState<IPlatformStats | null>(null);
+  const [monthlyTrend, setMonthlyTrend] = useState<IMonthlyTrend[]>([]);
+  const [latestPrice, setLatestPrice] = useState<IPriceBasketResponse | null>(null);
+  const [recentTrades, setRecentTrades] = useState<IRecentTrade[]>([]);
   const { balance, lockedBalance, fetchBalance } = useTokenStore();
 
   const loadStats = useCallback(() => {
@@ -55,24 +28,32 @@ export default function Dashboard() {
     analyticsService.getPlatformStats().then(setPlatformStats).catch(() => {});
   }, []);
 
+  const loadRecentTrades = useCallback(() => {
+    tradingService.getRecentTrades(10).then(setRecentTrades).catch(() => {});
+  }, []);
+
   useEffect(() => {
     loadStats();
+    loadRecentTrades();
     analyticsService
       .getMonthlyTrend(new Date().getFullYear())
-      .then((d: { monthly: MonthlyTrend[] }) => setMonthlyTrend(d.monthly))
+      .then((d: { monthly: IMonthlyTrend[] }) => setMonthlyTrend(d.monthly))
       .catch(() => {});
     oracleService.getLatestPrice().then(setLatestPrice).catch(() => {});
     fetchBalance();
   }, []);
 
   // WebSocket 실시간 업데이트
-  useSocketEvent('trade:matched', loadStats);
+  useSocketEvent('trade:matched', () => {
+    loadStats();
+    loadRecentTrades();
+  });
   useSocketEvent('order:updated', loadStats);
   useSocketEvent('price:update', () => {
     oracleService.getLatestPrice().then(setLatestPrice).catch(() => {});
   });
   useSocketEvent('stats:update', (data) => {
-    if (data) setStats((prev) => prev ? { ...prev, ...data } : data);
+    if (data) setStats((prev) => prev ? { ...prev, ...data } : prev);
   });
 
   const monthLabels = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
@@ -203,6 +184,46 @@ export default function Dashboard() {
           )}
         </Card>
       </div>
+
+      {/* Recent Trades Feed */}
+      <Card title="최근 거래 활동" subtitle="실시간 체결 내역">
+        {recentTrades.length > 0 ? (
+          <div className="divide-y divide-gray-100">
+            {recentTrades.map((trade) => (
+              <div key={trade.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">{SOURCE_ICONS[trade.energySource] || '⚡'}</span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900">
+                        {trade.sellerOrg}
+                      </span>
+                      <span className="text-gray-400 text-xs">&#8594;</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {trade.buyerOrg}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {trade.quantity.toLocaleString()} kWh @ {trade.price.toLocaleString()} {trade.paymentCurrency === 'EPC' ? 'EPC' : '원'}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {trade.totalAmount.toLocaleString()} {trade.paymentCurrency === 'EPC' ? 'EPC' : '원'}
+                  </p>
+                  <p className="text-xs text-gray-400">{relativeTime(trade.createdAt)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-400">
+            <span className="text-3xl block mb-2">📊</span>
+            거래 내역이 없습니다
+          </div>
+        )}
+      </Card>
 
       {/* Price Sources */}
       {latestPrice && (

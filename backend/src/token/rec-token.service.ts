@@ -2,10 +2,13 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Inject,
+  Optional,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EPCBlockchainService } from './epc-blockchain.service';
+import { TokenService } from './token.service';
 import { EventsGateway } from '../common/gateways/events.gateway';
 import { RECTokenStatus, EnergySource } from '@prisma/client';
 import { createHash } from 'crypto';
@@ -18,6 +21,7 @@ export class RECTokenService {
     private readonly prisma: PrismaService,
     private readonly epcBlockchain: EPCBlockchainService,
     private readonly eventsGateway: EventsGateway,
+    @Optional() @Inject(TokenService) private readonly tokenService?: TokenService,
   ) {}
 
   /** 기존 RECCertificate에서 NFT 토큰 발행 */
@@ -221,5 +225,66 @@ export class RECTokenService {
       },
       orderBy: { issuedAt: 'desc' },
     });
+  }
+
+  /** REC 토큰 구매 (EPC 결제) */
+  async purchaseToken(tokenId: string, buyerUserId: string, epcAmount: number) {
+    const token = await this.prisma.rECToken.findUnique({
+      where: { id: tokenId },
+      include: { owner: { select: { id: true, name: true } } },
+    });
+    if (!token) {
+      throw new NotFoundException('REC 토큰을 찾을 수 없습니다');
+    }
+    if (token.status !== RECTokenStatus.ACTIVE) {
+      throw new BadRequestException('구매 가능한 상태가 아닙니다');
+    }
+    if (token.ownerId === buyerUserId) {
+      throw new BadRequestException('자신의 토큰은 구매할 수 없습니다');
+    }
+    if (epcAmount <= 0) {
+      throw new BadRequestException('EPC 금액은 0보다 커야 합니다');
+    }
+
+    // EPC 이체: buyer → owner
+    if (this.tokenService) {
+      await this.tokenService.transfer(
+        buyerUserId,
+        token.ownerId,
+        epcAmount,
+        'rec-purchase',
+        tokenId,
+      );
+    }
+
+    // 소유권 이전
+    const previousOwner = token.ownerId;
+    const updated = await this.prisma.rECToken.update({
+      where: { id: tokenId },
+      data: { ownerId: buyerUserId },
+    });
+
+    // 블록체인 기록
+    try {
+      await this.epcBlockchain.transferRECToken(tokenId, previousOwner, buyerUserId);
+    } catch (error) {
+      this.logger.error(`블록체인 REC 구매 기록 실패: ${error.message}`);
+    }
+
+    this.logger.log(`REC 토큰 구매: ${tokenId}, 구매자: ${buyerUserId}, 판매자: ${previousOwner}, EPC: ${epcAmount}`);
+
+    this.eventsGateway.emitRECTokenUpdate({
+      action: 'purchased',
+      token: updated,
+      buyerId: buyerUserId,
+      previousOwnerId: previousOwner,
+      epcAmount,
+    });
+
+    return {
+      ...updated,
+      epcPaid: epcAmount,
+      previousOwnerId: previousOwner,
+    };
   }
 }

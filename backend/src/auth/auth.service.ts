@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Inject,
   UnauthorizedException,
   ConflictException,
   BadRequestException,
@@ -7,22 +8,24 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { DIDBlockchainService } from '../blockchain/did-blockchain.service';
 import { DIDSignatureService } from './services/did-signature.service';
+import { REDIS_CLIENT } from '../common/redis/redis.module';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private readonly challengeStore = new Map<string, { challenge: string; expiresAt: Date }>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly didService: DIDBlockchainService,
     private readonly didSignatureService: DIDSignatureService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -174,6 +177,7 @@ export class AuthService {
 
   /**
    * DID 챌린지 생성 (DID 기반 로그인 1단계)
+   * Redis에 5분 TTL로 저장하여 서버 재시작/스케일아웃에도 안전
    */
   async createDIDChallenge(did: string) {
     const credential = await this.prisma.dIDCredential.findUnique({
@@ -186,10 +190,14 @@ export class AuthService {
     }
 
     const { challenge, expiresAt } = this.didSignatureService.generateChallenge();
-    this.challengeStore.set(did, { challenge, expiresAt });
 
-    // 5분 후 자동 삭제
-    setTimeout(() => this.challengeStore.delete(did), 5 * 60 * 1000);
+    // Redis에 저장 (5분 TTL)
+    await this.redis.set(
+      `did:challenge:${did}`,
+      JSON.stringify({ challenge, expiresAt: expiresAt.toISOString() }),
+      'EX',
+      300,
+    );
 
     return { challenge, expiresAt, did };
   }
@@ -198,13 +206,15 @@ export class AuthService {
    * DID 챌린지-응답 검증 (DID 기반 로그인 2단계)
    */
   async loginWithDID(did: string, signature: string) {
-    const stored = this.challengeStore.get(did);
-    if (!stored) {
+    const raw = await this.redis.get(`did:challenge:${did}`);
+    if (!raw) {
       throw new BadRequestException('챌린지가 존재하지 않습니다. 먼저 챌린지를 요청하세요.');
     }
 
-    if (new Date() > stored.expiresAt) {
-      this.challengeStore.delete(did);
+    const stored = JSON.parse(raw) as { challenge: string; expiresAt: string };
+
+    if (new Date() > new Date(stored.expiresAt)) {
+      await this.redis.del(`did:challenge:${did}`);
       throw new BadRequestException('챌린지가 만료되었습니다');
     }
 
@@ -218,7 +228,7 @@ export class AuthService {
       throw new UnauthorizedException(`DID 인증 실패: ${result.message}`);
     }
 
-    this.challengeStore.delete(did);
+    await this.redis.del(`did:challenge:${did}`);
 
     const user = await this.prisma.user.findUnique({
       where: { id: result.userId },

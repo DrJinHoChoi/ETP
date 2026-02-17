@@ -25,6 +25,7 @@ interface AuthState {
   error: string | null;
   login: (data: LoginRequest) => Promise<void>;
   register: (data: RegisterRequest) => Promise<void>;
+  didLogin: (did: string, signature: string) => Promise<void>;
   logout: () => void;
   loadFromStorage: () => void;
   refreshProfile: () => Promise<void>;
@@ -79,6 +80,29 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch (err: any) {
       set({
         error: err.response?.data?.message || '회원가입에 실패했습니다',
+        isLoading: false,
+      });
+      throw err;
+    }
+  },
+
+  didLogin: async (did, signature) => {
+    set({ isLoading: true, error: null });
+    try {
+      const res = await authService.loginWithDID(did, signature);
+      localStorage.setItem('token', res.accessToken);
+      set({
+        user: res.user,
+        token: res.accessToken,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+      authService.getProfile().then((profile) => {
+        set({ user: profile });
+      }).catch(() => {});
+    } catch (err: any) {
+      set({
+        error: err.response?.data?.message || 'DID 인증에 실패했습니다',
         isLoading: false,
       });
       throw err;

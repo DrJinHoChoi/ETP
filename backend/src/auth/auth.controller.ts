@@ -1,5 +1,6 @@
 import { Controller, Post, Get, Body, Param, UseGuards, Req, Delete } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -11,12 +12,14 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: '회원가입 (DID 자동 발급)' })
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
   @Post('login')
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: '이메일/비밀번호 로그인' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
@@ -57,12 +60,14 @@ export class AuthController {
   // ========== DID 챌린지-응답 인증 ==========
 
   @Post('did/challenge')
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   @ApiOperation({ summary: 'DID 로그인 챌린지 요청 (1단계)' })
   createDIDChallenge(@Body('did') did: string) {
     return this.authService.createDIDChallenge(did);
   }
 
   @Post('did/login')
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'DID 로그인 서명 제출 (2단계)' })
   loginWithDID(
     @Body('did') did: string,

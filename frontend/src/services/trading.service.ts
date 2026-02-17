@@ -23,4 +23,7 @@ export const tradingService = {
   getTrades: () => api.get('/trading/trades').then((r) => r.data),
 
   getStats: () => api.get('/trading/stats').then((r) => r.data),
+
+  getRecentTrades: (limit = 10) =>
+    api.get('/trading/trades/recent', { params: { limit } }).then((r) => r.data),
 };

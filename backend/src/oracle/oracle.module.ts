@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
 import { OracleService } from './oracle.service';
 import { OracleController } from './oracle.controller';
 import { EIAProvider } from './providers/eia.provider';
@@ -8,7 +7,7 @@ import { KPXProvider } from './providers/kpx.provider';
 import { BlockchainModule } from '../blockchain/blockchain.module';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), BlockchainModule],
+  imports: [BlockchainModule],
   controllers: [OracleController],
   providers: [OracleService, EIAProvider, ENTSOEProvider, KPXProvider],
   exports: [OracleService],

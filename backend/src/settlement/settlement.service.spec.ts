@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SettlementService } from './settlement.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsGateway } from '../common/gateways/events.gateway';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('SettlementService', () => {
   let service: SettlementService;
@@ -10,6 +10,7 @@ describe('SettlementService', () => {
   const mockPrisma = {
     trade: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
     },
     settlement: {
@@ -166,6 +167,163 @@ describe('SettlementService', () => {
       const result = await service.getSettlementStats('user-1');
       expect(result.totalSettled).toBe(0);
       expect(result.totalAmount).toBe(0);
+    });
+  });
+
+  // ─── Phase 4 신규 테스트: 분쟁(Dispute) ───
+
+  describe('createDispute', () => {
+    const mockTrade = {
+      id: 'trade-1',
+      buyerId: 'buyer-1',
+      sellerId: 'seller-1',
+      status: 'MATCHED',
+      paymentCurrency: 'KRW',
+      settlement: null,
+    };
+
+    it('should create a dispute for a trade', async () => {
+      mockPrisma.trade.findUnique.mockResolvedValue(mockTrade);
+      mockPrisma.$transaction.mockResolvedValue([{}]);
+
+      const result = await service.createDispute('trade-1', 'buyer-1', '품질 문제');
+      expect(result.tradeId).toBe('trade-1');
+      expect(result.status).toBe('DISPUTED');
+      expect(result.reason).toBe('품질 문제');
+      expect(result.disputedBy).toBe('buyer-1');
+      expect(mockGateway.emitSettlementCompleted).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'disputed', tradeId: 'trade-1' }),
+      );
+    });
+
+    it('should freeze settlement when dispute is created', async () => {
+      const tradeWithSettlement = {
+        ...mockTrade,
+        settlement: { id: 'sett-1', status: 'PENDING' },
+      };
+      mockPrisma.trade.findUnique.mockResolvedValue(tradeWithSettlement);
+      mockPrisma.$transaction.mockResolvedValue([{}, {}]);
+
+      await service.createDispute('trade-1', 'buyer-1', '배송 지연');
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException for invalid trade', async () => {
+      mockPrisma.trade.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.createDispute('invalid', 'user-1', 'reason'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw BadRequestException for non-party user', async () => {
+      mockPrisma.trade.findUnique.mockResolvedValue(mockTrade);
+
+      await expect(
+        service.createDispute('trade-1', 'other-user', 'reason'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException for already disputed trade', async () => {
+      mockPrisma.trade.findUnique.mockResolvedValue({
+        ...mockTrade,
+        status: 'DISPUTED',
+      });
+
+      await expect(
+        service.createDispute('trade-1', 'buyer-1', 'reason'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException for cancelled trade', async () => {
+      mockPrisma.trade.findUnique.mockResolvedValue({
+        ...mockTrade,
+        status: 'CANCELLED',
+      });
+
+      await expect(
+        service.createDispute('trade-1', 'buyer-1', 'reason'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('resolveDispute', () => {
+    const disputedTrade = {
+      id: 'trade-1',
+      buyerId: 'buyer-1',
+      sellerId: 'seller-1',
+      status: 'DISPUTED',
+      paymentCurrency: 'KRW',
+      settlement: { id: 'sett-1', status: 'PROCESSING', netAmount: 9800 },
+    };
+
+    it('should resolve dispute with COMPLETE', async () => {
+      mockPrisma.trade.findUnique.mockResolvedValue(disputedTrade);
+      mockPrisma.$transaction.mockResolvedValue([{}, {}]);
+
+      const result = await service.resolveDispute('trade-1', 'admin-1', 'COMPLETE');
+      expect(result.tradeId).toBe('trade-1');
+      expect(result.resolution).toBe('COMPLETE');
+      expect(result.tradeStatus).toBe('SETTLED');
+      expect(result.settlementStatus).toBe('COMPLETED');
+      expect(result.resolvedBy).toBe('admin-1');
+      expect(mockGateway.emitSettlementCompleted).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'dispute-resolved', resolution: 'COMPLETE' }),
+      );
+    });
+
+    it('should resolve dispute with CANCEL', async () => {
+      mockPrisma.trade.findUnique.mockResolvedValue(disputedTrade);
+      mockPrisma.$transaction.mockResolvedValue([{}, {}]);
+
+      const result = await service.resolveDispute('trade-1', 'admin-1', 'CANCEL');
+      expect(result.tradeStatus).toBe('CANCELLED');
+      expect(result.settlementStatus).toBe('FAILED');
+    });
+
+    it('should resolve dispute with REFUND (KRW trade)', async () => {
+      mockPrisma.trade.findUnique.mockResolvedValue(disputedTrade);
+      mockPrisma.$transaction.mockResolvedValue([{}, {}]);
+
+      const result = await service.resolveDispute('trade-1', 'admin-1', 'REFUND');
+      expect(result.tradeStatus).toBe('CANCELLED');
+      expect(result.settlementStatus).toBe('FAILED');
+    });
+
+    it('should throw NotFoundException for invalid trade', async () => {
+      mockPrisma.trade.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.resolveDispute('invalid', 'admin-1', 'COMPLETE'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw BadRequestException for non-disputed trade', async () => {
+      mockPrisma.trade.findUnique.mockResolvedValue({
+        ...disputedTrade,
+        status: 'MATCHED',
+      });
+
+      await expect(
+        service.resolveDispute('trade-1', 'admin-1', 'COMPLETE'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('getDisputes', () => {
+    it('should return disputed trades list', async () => {
+      const disputes = [
+        { id: 'trade-1', status: 'DISPUTED', buyer: {}, seller: {} },
+      ];
+      mockPrisma.trade.findMany.mockResolvedValue(disputes);
+
+      const result = await service.getDisputes();
+      expect(result).toEqual(disputes);
+      expect(mockPrisma.trade.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: 'DISPUTED' },
+        }),
+      );
     });
   });
 });

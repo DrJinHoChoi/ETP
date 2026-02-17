@@ -26,14 +26,11 @@ export class DIDBlockchainService {
     userId: string,
     role: string,
     organization: string,
-  ): Promise<{ did: string; publicKey: string; privateKey: string }> {
+  ): Promise<{ did: string; publicKey: string }> {
     // Ed25519 키 쌍 생성
     const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
     const publicKeyHex = publicKey
       .export({ type: 'spki', format: 'der' })
-      .toString('hex');
-    const privateKeyHex = privateKey
-      .export({ type: 'pkcs8', format: 'der' })
       .toString('hex');
 
     // DID 식별자 생성
@@ -52,7 +49,8 @@ export class DIDBlockchainService {
 
     this.logger.log(`DID 생성 완료: ${did} (user: ${userId})`);
 
-    return { did, publicKey: publicKeyHex, privateKey: privateKeyHex };
+    // privateKey는 서버에서만 사용하며 클라이언트에 반환하지 않음
+    return { did, publicKey: publicKeyHex };
   }
 
   /**

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, Inject, Optional, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderStatus, OrderType, PaymentCurrency, TradeStatus } from '@prisma/client';
@@ -296,5 +297,150 @@ export class TradingService {
         },
       });
     }
+  }
+
+  /**
+   * 만료된 주문 자동 처리 (매분 실행)
+   * validUntil이 지난 PENDING/PARTIALLY_FILLED 주문을 EXPIRED로 변경하고
+   * EPC 매수 주문의 잠금을 해제한다.
+   */
+  @Cron('* * * * *')
+  async expireStaleOrders() {
+    const now = new Date();
+
+    const expiredOrders = await this.prisma.order.findMany({
+      where: {
+        validUntil: { lt: now },
+        status: { in: [OrderStatus.PENDING, OrderStatus.PARTIALLY_FILLED] },
+      },
+    });
+
+    if (expiredOrders.length === 0) return;
+
+    this.logger.log(`만료 주문 처리 시작: ${expiredOrders.length}건`);
+
+    for (const order of expiredOrders) {
+      try {
+        await this.prisma.order.update({
+          where: { id: order.id },
+          data: { status: OrderStatus.EXPIRED },
+        });
+
+        // EPC 매수 주문: 잔여 잠금 해제
+        if (
+          order.paymentCurrency === PaymentCurrency.EPC &&
+          order.type === OrderType.BUY &&
+          order.remainingQty > 0 &&
+          this.tokenService
+        ) {
+          const lockedAmount = order.remainingQty * order.price;
+          try {
+            await this.tokenService.unlockFromCancelledTrade(
+              order.userId,
+              lockedAmount,
+              order.id,
+            );
+          } catch (unlockError) {
+            this.logger.error(
+              `만료 주문 EPC 잠금 해제 실패 (${order.id}): ${(unlockError as Error).message}`,
+            );
+          }
+        }
+
+        this.eventsGateway.emitOrderUpdated({
+          action: 'expired',
+          order: { id: order.id, type: order.type, status: OrderStatus.EXPIRED },
+        });
+      } catch (error) {
+        this.logger.error(`주문 만료 처리 실패 (${order.id}): ${(error as Error).message}`);
+      }
+    }
+
+    this.logger.log(`만료 주문 처리 완료: ${expiredOrders.length}건`);
+  }
+
+  /** 최근 체결 내역 (대시보드 피드용) */
+  async getRecentTrades(limit = 10) {
+    const trades = await this.prisma.trade.findMany({
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        buyer: { select: { organization: true } },
+        seller: { select: { organization: true } },
+      },
+    });
+
+    return trades.map((t) => ({
+      id: t.id,
+      energySource: t.energySource,
+      quantity: t.quantity,
+      price: t.price,
+      totalAmount: t.totalAmount,
+      paymentCurrency: t.paymentCurrency,
+      buyerOrg: t.buyer.organization,
+      sellerOrg: t.seller.organization,
+      createdAt: t.createdAt.toISOString(),
+    }));
+  }
+
+  // ─── Admin 기능 ───
+
+  /** 전체 주문 조회 (Admin) */
+  async getAdminOrders(filters?: {
+    status?: OrderStatus;
+    type?: OrderType;
+  }) {
+    return this.prisma.order.findMany({
+      where: {
+        ...(filters?.status && { status: filters.status }),
+        ...(filters?.type && { type: filters.type }),
+      },
+      include: {
+        user: { select: { id: true, name: true, email: true, organization: true, role: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+  }
+
+  /** 관리자 주문 강제 취소 */
+  async adminCancelOrder(orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+    if (!order) {
+      throw new NotFoundException('주문을 찾을 수 없습니다');
+    }
+    if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.EXPIRED) {
+      throw new NotFoundException('이미 취소/만료된 주문입니다');
+    }
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { status: OrderStatus.CANCELLED },
+    });
+
+    // EPC 매수 주문: 잔여 잠금 해제
+    if (
+      order.paymentCurrency === PaymentCurrency.EPC &&
+      order.type === OrderType.BUY &&
+      order.remainingQty > 0 &&
+      this.tokenService
+    ) {
+      const lockedAmount = order.remainingQty * order.price;
+      try {
+        await this.tokenService.unlockFromCancelledTrade(order.userId, lockedAmount, orderId);
+      } catch (error) {
+        this.logger.error(`관리자 취소 EPC 잠금 해제 실패 (${orderId}): ${(error as Error).message}`);
+      }
+    }
+
+    this.eventsGateway.emitOrderUpdated({
+      action: 'admin-cancelled',
+      order: { id: updated.id, type: updated.type, status: updated.status },
+    });
+
+    this.logger.warn(`관리자 주문 강제 취소: ${orderId}`);
+    return updated;
   }
 }

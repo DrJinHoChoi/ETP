@@ -3,16 +3,13 @@ import { settlementService } from '../services/settlement.service';
 import { Card, Badge, Button, StatCard } from '../components/ui';
 import { useToast } from '../components/ui/Toast';
 import { useSocketEvent } from '../hooks/useWebSocket';
+import { exportToCSV } from '../lib/csv-export';
+import type { ISettlement } from '@etp/shared';
 
-interface Settlement {
-  id: string;
-  tradeId: string;
-  amount: number;
-  fee: number;
-  netAmount: number;
+/** 프론트 정산 UI에 필요한 확장 필드 */
+interface Settlement extends Pick<ISettlement, 'id' | 'tradeId' | 'amount' | 'fee' | 'netAmount' | 'status'> {
   paymentCurrency: string;
   epcPrice: number | null;
-  status: string;
   settledAt: string | null;
   createdAt: string;
   trade: {
@@ -58,11 +55,11 @@ export default function Settlement() {
       setSettlements(settList);
       setStats(settStats);
     } catch {
-      // ignore
+      toast('error', '정산 데이터 로드 실패');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   // WebSocket: 정산 완료/실패 시 자동 새로고침
   useSocketEvent('settlement:completed', (data) => {
@@ -94,9 +91,25 @@ export default function Settlement() {
 
   return (
     <div className="space-y-6 slide-up">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">정산</h1>
-        <p className="text-sm text-gray-500 mt-1">거래 정산 내역과 수수료를 확인하세요</p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">정산</h1>
+          <p className="text-sm text-gray-500 mt-1">거래 정산 내역과 수수료를 확인하세요</p>
+        </div>
+        {settlements.length > 0 && (
+          <Button variant="secondary" onClick={() => exportToCSV(settlements, [
+            { key: 'id', label: '정산ID', format: (v: string) => v.slice(0, 8) },
+            { key: 'tradeId', label: '거래ID', format: (v: string) => v.slice(0, 8) },
+            { key: 'amount', label: '총액' },
+            { key: 'fee', label: '수수료' },
+            { key: 'netAmount', label: '순액' },
+            { key: 'paymentCurrency', label: '결제수단' },
+            { key: 'status', label: '상태' },
+            { key: 'createdAt', label: '일시', format: (v: string) => new Date(v).toLocaleDateString('ko-KR') },
+          ], '정산내역')}>
+            CSV
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
