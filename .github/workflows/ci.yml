@@ -25,6 +25,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -59,16 +69,36 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter backend prisma:generate
 
+      - name: Lint
+        run: pnpm lint
+
       - name: Build backend
         run: pnpm --filter backend build
 
       - name: Build frontend
         run: pnpm --filter frontend build
 
-      - name: Run backend tests
+      - name: Run backend unit tests
         run: pnpm --filter backend test
         env:
           DATABASE_URL: postgresql://etp:etp_password@localhost:5432/etp_dev
+          JWT_SECRET: ci-test-secret-key-for-testing
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
 
       - name: Run frontend tests
         run: pnpm --filter frontend test
+
+      - name: Run database migrations
+        run: cd backend && npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://etp:etp_password@localhost:5432/etp_dev
+
+      - name: Run E2E tests
+        run: pnpm --filter backend test:e2e
+        env:
+          DATABASE_URL: postgresql://etp:etp_password@localhost:5432/etp_dev
+          JWT_SECRET: ci-test-secret-key-for-testing
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          NODE_ENV: test

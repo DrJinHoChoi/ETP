@@ -7,6 +7,7 @@ describe('Auth (e2e)', () => {
   let app: INestApplication;
   let accessToken: string;
   const testEmail = `e2e-auth-${Date.now()}@test.com`;
+  const strongPassword = 'StrongP@ss1';
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -31,12 +32,12 @@ describe('Auth (e2e)', () => {
   });
 
   describe('POST /api/auth/register', () => {
-    it('should register a new user', () => {
+    it('should register a new user with strong password', () => {
       return request(app.getHttpServer())
         .post('/api/auth/register')
         .send({
           email: testEmail,
-          password: 'testpass123',
+          password: strongPassword,
           name: 'E2E 테스트',
           role: 'SUPPLIER',
           organization: 'E2E기업',
@@ -54,7 +55,7 @@ describe('Auth (e2e)', () => {
         .post('/api/auth/register')
         .send({
           email: testEmail,
-          password: 'testpass123',
+          password: strongPassword,
           name: 'E2E 중복',
           role: 'CONSUMER',
           organization: 'E2E기업',
@@ -68,6 +69,58 @@ describe('Auth (e2e)', () => {
         .send({ email: 'not-valid' })
         .expect(400);
     });
+
+    it('should reject weak password (no uppercase)', () => {
+      return request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send({
+          email: `weak-noupper-${Date.now()}@test.com`,
+          password: 'weakpass1!',
+          name: '약한비밀번호',
+          role: 'CONSUMER',
+          organization: 'E2E기업',
+        })
+        .expect(400);
+    });
+
+    it('should reject weak password (no special character)', () => {
+      return request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send({
+          email: `weak-nospecial-${Date.now()}@test.com`,
+          password: 'WeakPass1',
+          name: '약한비밀번호',
+          role: 'CONSUMER',
+          organization: 'E2E기업',
+        })
+        .expect(400);
+    });
+
+    it('should reject password shorter than 8 characters', () => {
+      return request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send({
+          email: `weak-short-${Date.now()}@test.com`,
+          password: 'Ab1!',
+          name: '짧은비밀번호',
+          role: 'CONSUMER',
+          organization: 'E2E기업',
+        })
+        .expect(400);
+    });
+
+    it('should reject weak password (no digit)', () => {
+      return request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send({
+          email: `weak-nodigit-${Date.now()}@test.com`,
+          password: 'WeakPass!!',
+          name: '약한비밀번호',
+          role: 'CONSUMER',
+          organization: 'E2E기업',
+        })
+        .expect(400);
+    });
   });
 
   describe('POST /api/auth/login', () => {
@@ -76,7 +129,7 @@ describe('Auth (e2e)', () => {
         .post('/api/auth/login')
         .send({
           email: testEmail,
-          password: 'testpass123',
+          password: strongPassword,
         })
         .expect(201)
         .expect((res) => {
@@ -90,7 +143,7 @@ describe('Auth (e2e)', () => {
         .post('/api/auth/login')
         .send({
           email: testEmail,
-          password: 'wrongpassword',
+          password: 'WrongP@ss1',
         })
         .expect(401);
     });
@@ -100,9 +153,29 @@ describe('Auth (e2e)', () => {
         .post('/api/auth/login')
         .send({
           email: 'nonexistent@test.com',
-          password: 'testpass123',
+          password: strongPassword,
         })
         .expect(401);
+    });
+
+    it('should reject empty email', () => {
+      return request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({
+          email: '',
+          password: strongPassword,
+        })
+        .expect(400);
+    });
+
+    it('should reject empty password', () => {
+      return request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({
+          email: testEmail,
+          password: '',
+        })
+        .expect(400);
     });
   });
 
