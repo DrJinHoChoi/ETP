@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { ThrottlerGuard } from '@nestjs/throttler';
 
 describe('Trading (e2e)', () => {
   let app: INestApplication;
@@ -14,7 +15,10 @@ describe('Trading (e2e)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideGuard(ThrottlerGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api');
