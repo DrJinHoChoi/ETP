@@ -9,10 +9,11 @@ import {
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SettlementService } from './settlement.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { DIDAuthGuard } from '../auth/guards/did-auth.guard';
 
 @ApiTags('정산')
 @Controller('settlement')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, DIDAuthGuard)
 @ApiBearerAuth()
 export class SettlementController {
   constructor(private readonly settlementService: SettlementService) {}

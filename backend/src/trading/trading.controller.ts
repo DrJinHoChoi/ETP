@@ -13,11 +13,12 @@ import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger'
 import { TradingService } from './trading.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { DIDAuthGuard } from '../auth/guards/did-auth.guard';
 import { OrderType, OrderStatus } from '@prisma/client';
 
 @ApiTags('전력거래')
 @Controller('trading')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, DIDAuthGuard)
 @ApiBearerAuth()
 export class TradingController {
   constructor(private readonly tradingService: TradingService) {}

@@ -12,6 +12,7 @@ export const tradingService = {
     energySource: string;
     quantity: number;
     price: number;
+    paymentCurrency?: string;
     validFrom: string;
     validUntil: string;
   }) => api.post('/trading/orders', data).then((r) => r.data),

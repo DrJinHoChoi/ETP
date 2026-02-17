@@ -1,137 +1,183 @@
-export default function Settlement() {
-  const mockSettlements = [
-    {
-      id: '1',
-      tradeId: 'T-001',
-      energySource: '태양광',
-      quantity: 1000,
-      price: 120,
-      amount: 120000,
-      fee: 2400,
-      netAmount: 117600,
-      status: 'COMPLETED',
-      settledAt: '2025-03-15',
-    },
-    {
-      id: '2',
-      tradeId: 'T-002',
-      energySource: '풍력',
-      quantity: 500,
-      price: 110,
-      amount: 55000,
-      fee: 1100,
-      netAmount: 53900,
-      status: 'PENDING',
-      settledAt: null,
-    },
-    {
-      id: '3',
-      tradeId: 'T-003',
-      energySource: '태양광',
-      quantity: 2000,
-      price: 125,
-      amount: 250000,
-      fee: 5000,
-      netAmount: 245000,
-      status: 'PROCESSING',
-      settledAt: null,
-    },
-  ];
+import { useEffect, useState, useCallback } from 'react';
+import { settlementService } from '../services/settlement.service';
+import { Card, Badge, Button, StatCard } from '../components/ui';
+import { useToast } from '../components/ui/Toast';
+import { useSocketEvent } from '../hooks/useWebSocket';
 
-  const statusLabel: Record<string, { text: string; color: string }> = {
-    PENDING: { text: '대기', color: 'bg-yellow-100 text-yellow-700' },
-    PROCESSING: { text: '처리중', color: 'bg-blue-100 text-blue-700' },
-    COMPLETED: { text: '완료', color: 'bg-green-100 text-green-700' },
-    FAILED: { text: '실패', color: 'bg-red-100 text-red-700' },
+interface Settlement {
+  id: string;
+  tradeId: string;
+  amount: number;
+  fee: number;
+  netAmount: number;
+  paymentCurrency: string;
+  epcPrice: number | null;
+  status: string;
+  settledAt: string | null;
+  createdAt: string;
+  trade: {
+    id: string;
+    energySource: string;
+    quantity: number;
+    price: number;
+  };
+}
+
+interface SettlementStats {
+  totalSettled: number;
+  totalAmount: number;
+  totalFee: number;
+  totalNetAmount: number;
+}
+
+const STATUS_MAP: Record<string, { text: string; variant: 'success' | 'warning' | 'error' | 'info' }> = {
+  PENDING: { text: '대기', variant: 'warning' },
+  PROCESSING: { text: '처리중', variant: 'info' },
+  COMPLETED: { text: '완료', variant: 'success' },
+  FAILED: { text: '실패', variant: 'error' },
+};
+
+const SOURCE_LABELS: Record<string, string> = { SOLAR: '태양광', WIND: '풍력', HYDRO: '수력', BIOMASS: '바이오매스', GEOTHERMAL: '지열' };
+const SOURCE_ICONS: Record<string, string> = { SOLAR: '☀️', WIND: '🌬️', HYDRO: '💧', BIOMASS: '🌿', GEOTHERMAL: '🌋' };
+
+export default function Settlement() {
+  const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [stats, setStats] = useState<SettlementStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
+
+  useEffect(() => { loadData(); }, []);
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [settList, settStats] = await Promise.all([
+        settlementService.getSettlements(),
+        settlementService.getStats(),
+      ]);
+      setSettlements(settList);
+      setStats(settStats);
+    } catch {
+      // ignore
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // WebSocket: 정산 완료/실패 시 자동 새로고침
+  useSocketEvent('settlement:completed', (data) => {
+    loadData();
+    if (data?.action === 'confirmed') {
+      toast('success', '정산이 완료되었습니다');
+    } else if (data?.action === 'failed') {
+      toast('error', `정산 실패: ${data.reason || '알 수 없는 오류'}`);
+    }
+  });
+
+  const handleConfirm = async (id: string) => {
+    try {
+      await settlementService.confirmSettlement(id);
+      toast('success', '정산이 확인되었습니다');
+      loadData();
+    } catch (err: any) {
+      toast('error', err.response?.data?.message || '정산 확인 실패');
+    }
   };
 
-  const totalAmount = mockSettlements.reduce((s, d) => s + d.amount, 0);
-  const totalFee = mockSettlements.reduce((s, d) => s + d.fee, 0);
-  const totalNet = mockSettlements.reduce((s, d) => s + d.netAmount, 0);
+  const formatCurrency = (amount: number, currency: string) => {
+    if (currency === 'EPC') return `${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} EPC`;
+    return `${amount.toLocaleString()} 원`;
+  };
+
+  const completedCount = settlements.filter((s) => s.status === 'COMPLETED').length;
+  const pendingCount = settlements.filter((s) => s.status === 'PENDING').length;
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">정산</h1>
-
-      {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white p-6 rounded-xl shadow-sm border">
-          <p className="text-sm text-gray-500">총 정산 금액</p>
-          <p className="text-2xl font-bold mt-1">
-            {totalAmount.toLocaleString()} 원
-          </p>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border">
-          <p className="text-sm text-gray-500">총 수수료</p>
-          <p className="text-2xl font-bold text-orange-600 mt-1">
-            {totalFee.toLocaleString()} 원
-          </p>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border">
-          <p className="text-sm text-gray-500">총 실수령액</p>
-          <p className="text-2xl font-bold text-primary-600 mt-1">
-            {totalNet.toLocaleString()} 원
-          </p>
-        </div>
+    <div className="space-y-6 slide-up">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">정산</h1>
+        <p className="text-sm text-gray-500 mt-1">거래 정산 내역과 수수료를 확인하세요</p>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-500">
-                거래 ID
-              </th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-gray-500">
-                에너지원
-              </th>
-              <th className="text-right px-4 py-3 text-sm font-medium text-gray-500">
-                수량 (kWh)
-              </th>
-              <th className="text-right px-4 py-3 text-sm font-medium text-gray-500">
-                금액 (원)
-              </th>
-              <th className="text-right px-4 py-3 text-sm font-medium text-gray-500">
-                수수료
-              </th>
-              <th className="text-right px-4 py-3 text-sm font-medium text-gray-500">
-                실수령액
-              </th>
-              <th className="text-center px-4 py-3 text-sm font-medium text-gray-500">
-                상태
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {mockSettlements.map((s) => (
-              <tr key={s.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 text-sm font-mono">{s.tradeId}</td>
-                <td className="px-4 py-3 text-sm">{s.energySource}</td>
-                <td className="px-4 py-3 text-sm text-right">
-                  {s.quantity.toLocaleString()}
-                </td>
-                <td className="px-4 py-3 text-sm text-right">
-                  {s.amount.toLocaleString()}
-                </td>
-                <td className="px-4 py-3 text-sm text-right text-orange-600">
-                  {s.fee.toLocaleString()}
-                </td>
-                <td className="px-4 py-3 text-sm text-right font-medium">
-                  {s.netAmount.toLocaleString()}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span
-                    className={`px-2 py-1 text-xs rounded-full ${statusLabel[s.status]?.color}`}
-                  >
-                    {statusLabel[s.status]?.text}
-                  </span>
-                </td>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard
+          title="정산 건수"
+          value={`${stats?.totalSettled || 0}건`}
+          subtitle={`대기 ${pendingCount}건`}
+          icon={<span className="text-lg">📋</span>}
+        />
+        <StatCard
+          title="총 정산 금액"
+          value={`${(stats?.totalAmount || 0).toLocaleString()} 원`}
+          variant="gradient-green"
+          icon={<span className="text-lg">💰</span>}
+        />
+        <StatCard
+          title="총 수수료"
+          value={`${(stats?.totalFee || 0).toLocaleString()} 원`}
+          subtitle="플랫폼 수수료 2%"
+          icon={<span className="text-lg">🏷️</span>}
+        />
+        <StatCard
+          title="총 실수령액"
+          value={`${(stats?.totalNetAmount || 0).toLocaleString()} 원`}
+          subtitle={`완료 ${completedCount}건`}
+          variant="gradient-indigo"
+          icon={<span className="text-lg">💎</span>}
+        />
+      </div>
+
+      <Card title="정산 내역" padding={false}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                {['거래 ID', '에너지원', '수량', '금액', '수수료', '실수령액', '결제', '상태', '작업'].map((h) => (
+                  <th key={h} className={`px-4 py-3 font-semibold text-gray-600 ${['수량', '금액', '수수료', '실수령액'].includes(h) ? 'text-right' : ['결제', '상태', '작업'].includes(h) ? 'text-center' : 'text-left'}`}>{h}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y">
+              {isLoading ? (
+                <tr><td colSpan={9} className="px-4 py-16 text-center text-gray-400">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary-200 border-t-primary-600" />
+                    로딩 중...
+                  </div>
+                </td></tr>
+              ) : settlements.length === 0 ? (
+                <tr><td colSpan={9} className="px-4 py-16 text-center text-gray-400"><span className="text-3xl block mb-2">📋</span>정산 내역이 없습니다</td></tr>
+              ) : (
+                settlements.map((s) => (
+                  <tr key={s.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-xs text-gray-500">{s.tradeId.slice(0, 8)}...</td>
+                    <td className="px-4 py-3">{SOURCE_ICONS[s.trade.energySource]} {SOURCE_LABELS[s.trade.energySource] || s.trade.energySource}</td>
+                    <td className="px-4 py-3 text-right font-medium">{s.trade.quantity.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right">{formatCurrency(s.amount, s.paymentCurrency)}</td>
+                    <td className="px-4 py-3 text-right text-orange-600">{formatCurrency(s.fee, s.paymentCurrency)}</td>
+                    <td className="px-4 py-3 text-right font-semibold">{formatCurrency(s.netAmount, s.paymentCurrency)}</td>
+                    <td className="px-4 py-3 text-center">
+                      <Badge variant={s.paymentCurrency === 'EPC' ? 'primary' : 'neutral'}>{s.paymentCurrency}</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <Badge variant={STATUS_MAP[s.status]?.variant || 'neutral'} dot>
+                        {STATUS_MAP[s.status]?.text || s.status}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {s.status === 'PENDING' && (
+                        <Button variant="ghost" size="sm" onClick={() => handleConfirm(s.id)}>
+                          <span className="text-primary-600 font-medium">확인</span>
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }
