@@ -35,6 +35,7 @@ export interface IOrder {
   quantity: number;       // kWh
   price: number;          // KRW per kWh
   remainingQty: number;   // 미체결 잔량
+  paymentCurrency: string; // 결제 통화 (KRW | EPC)
   status: OrderStatus;
   validFrom: Date;
   validUntil: Date;

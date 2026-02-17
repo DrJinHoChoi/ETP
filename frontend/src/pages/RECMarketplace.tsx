@@ -32,6 +32,8 @@ export default function RECMarketplace() {
   const [tokens, setTokens] = useState<RECToken[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [retireTarget, setRetireTarget] = useState<string | null>(null);
+  const [purchaseTarget, setPurchaseTarget] = useState<RECToken | null>(null);
+  const [epcAmount, setEpcAmount] = useState('');
   const { toast } = useToast();
 
   useEffect(() => { loadTokens(); }, [tab]);
@@ -44,9 +46,22 @@ export default function RECMarketplace() {
         : await recTokenService.getMyTokens();
       setTokens(data);
     } catch {
-      // ignore
+      toast('error', 'REC 토큰 로드 실패');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handlePurchase = async () => {
+    if (!purchaseTarget || !epcAmount) return;
+    try {
+      await recTokenService.purchaseToken(purchaseTarget.id, parseFloat(epcAmount));
+      toast('success', 'REC 토큰을 성공적으로 구매했습니다!');
+      setPurchaseTarget(null);
+      setEpcAmount('');
+      loadTokens();
+    } catch (err: any) {
+      toast('error', err.response?.data?.message || 'REC 구매 실패');
     }
   };
 
@@ -171,6 +186,16 @@ export default function RECMarketplace() {
                 )}
               </div>
 
+              {tab === 'marketplace' && token.status === 'ACTIVE' && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="w-full mt-3"
+                  onClick={() => { setPurchaseTarget(token); setEpcAmount(''); }}
+                >
+                  EPC로 구매
+                </Button>
+              )}
               {tab === 'my' && token.status === 'ACTIVE' && (
                 <Button
                   variant="danger"
@@ -178,7 +203,7 @@ export default function RECMarketplace() {
                   className="w-full mt-3"
                   onClick={() => setRetireTarget(token.id)}
                 >
-                  🌱 RE100 소멸 처리
+                  RE100 소멸 처리
                 </Button>
               )}
             </div>
@@ -203,6 +228,51 @@ export default function RECMarketplace() {
           이 REC 토큰을 소멸 처리하시겠습니까?<br />
           소멸된 토큰은 RE100 달성 실적에 반영되며, 이 작업은 되돌릴 수 없습니다.
         </p>
+      </Modal>
+
+      {/* Purchase Modal */}
+      <Modal
+        open={!!purchaseTarget}
+        onClose={() => setPurchaseTarget(null)}
+        title="REC 토큰 구매"
+        size="sm"
+        footer={
+          <div className="flex gap-2 justify-end">
+            <Button variant="secondary" onClick={() => setPurchaseTarget(null)}>취소</Button>
+            <Button variant="primary" onClick={handlePurchase} disabled={!epcAmount || parseFloat(epcAmount) <= 0}>구매 확인</Button>
+          </div>
+        }
+      >
+        {purchaseTarget && (
+          <div className="space-y-4">
+            <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">에너지원</span>
+                <span className="font-medium">{SOURCE_ICONS[purchaseTarget.energySource]} {SOURCE_LABELS[purchaseTarget.energySource]}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">용량</span>
+                <span className="font-bold">{purchaseTarget.quantity.toLocaleString()} kWh</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">판매자</span>
+                <span>{purchaseTarget.owner?.organization || '-'}</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">EPC 금액</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={epcAmount}
+                onChange={(e) => setEpcAmount(e.target.value)}
+                placeholder="구매 금액 (EPC)"
+                className="w-full px-3.5 py-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+              />
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

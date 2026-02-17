@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Param,
+  Body,
   UseGuards,
   Req,
 } from '@nestjs/common';
@@ -10,6 +11,8 @@ import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SettlementService } from './settlement.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DIDAuthGuard } from '../auth/guards/did-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @ApiTags('정산')
 @Controller('settlement')
@@ -40,5 +43,37 @@ export class SettlementController {
   @ApiOperation({ summary: '정산 통계' })
   getStats(@Req() req: any) {
     return this.settlementService.getSettlementStats(req.user.id);
+  }
+
+  // ─── 분쟁(Dispute) 엔드포인트 ───
+
+  @Post('dispute/:tradeId')
+  @ApiOperation({ summary: '분쟁 제기' })
+  createDispute(
+    @Param('tradeId') tradeId: string,
+    @Req() req: any,
+    @Body() body: { reason: string },
+  ) {
+    return this.settlementService.createDispute(tradeId, req.user.id, body.reason);
+  }
+
+  @Post('dispute/:tradeId/resolve')
+  @ApiOperation({ summary: '분쟁 해결 (Admin)' })
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  resolveDispute(
+    @Param('tradeId') tradeId: string,
+    @Req() req: any,
+    @Body() body: { resolution: 'REFUND' | 'COMPLETE' | 'CANCEL' },
+  ) {
+    return this.settlementService.resolveDispute(tradeId, req.user.id, body.resolution);
+  }
+
+  @Get('disputes')
+  @ApiOperation({ summary: '분쟁 목록 (Admin)' })
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN')
+  getDisputes() {
+    return this.settlementService.getDisputes();
   }
 }

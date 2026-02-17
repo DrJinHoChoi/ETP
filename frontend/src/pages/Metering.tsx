@@ -7,15 +7,11 @@ import { meteringService } from '../services/metering.service';
 import { Card, Button, StatCard, Badge } from '../components/ui';
 import { useToast } from '../components/ui/Toast';
 import { useSocketEvent } from '../hooks/useWebSocket';
+import type { IMeterReading } from '@etp/shared';
 
-interface MeterReading {
-  id: string;
-  production: number;
-  consumption: number;
-  source: string;
-  deviceId: string;
+type MeterReading = Pick<IMeterReading, 'id' | 'production' | 'consumption' | 'source' | 'deviceId'> & {
   timestamp: string;
-}
+};
 
 const SOURCE_LABELS: Record<string, string> = { SOLAR: '태양광', WIND: '풍력', HYDRO: '수력', BIOMASS: '바이오매스', GEOTHERMAL: '지열' };
 const SOURCE_ICONS: Record<string, string> = { SOLAR: '☀️', WIND: '🌬️', HYDRO: '💧', BIOMASS: '🌿', GEOTHERMAL: '🌋' };
@@ -41,11 +37,11 @@ export default function Metering() {
       const data = await meteringService.getReadings();
       setReadings(data);
     } catch {
-      // ignore
+      toast('error', '미터링 데이터 로드 실패');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   // WebSocket: 새 미터링 데이터 수신 시 자동 새로고침
   useSocketEvent('meter:reading', (data) => {

@@ -16,4 +16,7 @@ export const recTokenService = {
 
   issueFromCert: (certId: string) =>
     api.post(`/rec-token/issue/${certId}`).then((r) => r.data),
+
+  purchaseToken: (tokenId: string, epcAmount: number) =>
+    api.post(`/rec-token/${tokenId}/purchase`, { epcAmount }).then((r) => r.data),
 };

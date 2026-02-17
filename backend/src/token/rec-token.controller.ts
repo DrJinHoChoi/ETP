@@ -64,6 +64,16 @@ export class RECTokenController {
     return this.recTokenService.retire(id, req.user.id);
   }
 
+  @Post(':id/purchase')
+  @ApiOperation({ summary: 'REC 토큰 구매 (EPC 결제)' })
+  async purchaseToken(
+    @Param('id') id: string,
+    @Request() req: any,
+    @Body() body: { epcAmount: number },
+  ) {
+    return this.recTokenService.purchaseToken(id, req.user.id, body.epcAmount);
+  }
+
   @Post('issue/:certId')
   @ApiOperation({ summary: 'REC 인증서에서 토큰 발행' })
   async issueFromCert(@Param('certId') certId: string) {

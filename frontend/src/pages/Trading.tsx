@@ -4,18 +4,12 @@ import { useTokenStore } from '../store/tokenStore';
 import { Card, Badge, Button, StatCard } from '../components/ui';
 import { useToast } from '../components/ui/Toast';
 import { useSocketEvent } from '../hooks/useWebSocket';
+import { exportToCSV } from '../lib/csv-export';
+import type { IOrder } from '@etp/shared';
 
-interface Order {
-  id: string;
-  type: string;
-  energySource: string;
-  quantity: number;
-  price: number;
-  remainingQty: number;
-  paymentCurrency: string;
-  status: string;
+type Order = Pick<IOrder, 'id' | 'type' | 'energySource' | 'quantity' | 'price' | 'remainingQty' | 'paymentCurrency' | 'status'> & {
   createdAt: string;
-}
+};
 
 const SOURCE_LABELS: Record<string, string> = { SOLAR: '태양광', WIND: '풍력', HYDRO: '수력', BIOMASS: '바이오매스', GEOTHERMAL: '지열' };
 const SOURCE_ICONS: Record<string, string> = { SOLAR: '☀️', WIND: '🌬️', HYDRO: '💧', BIOMASS: '🌿', GEOTHERMAL: '🌋' };
@@ -39,8 +33,8 @@ export default function Trading() {
 
   useEffect(() => { loadOrders(); }, []);
   const loadOrders = useCallback(() => {
-    tradingService.getOrders().then(setOrders).catch(console.error);
-  }, []);
+    tradingService.getOrders().then(setOrders).catch(() => toast('error', '주문 목록 로드 실패'));
+  }, [toast]);
 
   // WebSocket: 주문 상태 변경 / 거래 체결 시 자동 새로고침
   useSocketEvent('order:updated', loadOrders);
@@ -80,9 +74,25 @@ export default function Trading() {
           <h1 className="text-2xl font-bold text-gray-900">전력 거래</h1>
           <p className="text-sm text-gray-500 mt-1">전력 매수/매도 주문을 관리하세요</p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)} variant={showForm ? 'secondary' : 'primary'}>
-          {showForm ? '닫기' : '+ 새 주문'}
-        </Button>
+        <div className="flex gap-2">
+          {orders.length > 0 && (
+            <Button variant="secondary" onClick={() => exportToCSV(orders, [
+              { key: 'type', label: '유형', format: (v: string) => v === 'BUY' ? '매수' : '매도' },
+              { key: 'energySource', label: '에너지원', format: (v: string) => SOURCE_LABELS[v] || v },
+              { key: 'quantity', label: '수량(kWh)' },
+              { key: 'price', label: '단가' },
+              { key: 'remainingQty', label: '잔량' },
+              { key: 'paymentCurrency', label: '결제수단' },
+              { key: 'status', label: '상태', format: (v: string) => STATUS_MAP[v]?.text || v },
+              { key: 'createdAt', label: '생성일', format: (v: string) => new Date(v).toLocaleDateString('ko-KR') },
+            ], '주문내역')}>
+              CSV
+            </Button>
+          )}
+          <Button onClick={() => setShowForm(!showForm)} variant={showForm ? 'secondary' : 'primary'}>
+            {showForm ? '닫기' : '+ 새 주문'}
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

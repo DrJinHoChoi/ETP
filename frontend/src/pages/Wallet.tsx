@@ -41,7 +41,7 @@ export default function Wallet() {
       const data = await tokenService.getTransactions();
       setTransactions(data);
     } catch {
-      // ignore
+      toast('error', '거래 내역 로드 실패');
     }
   };
 

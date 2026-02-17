@@ -1,21 +1,31 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { Logger } from 'nestjs-pino';
+import helmet from 'helmet';
+import compression from 'compression';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
-import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
-  const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+
+  // Pino 구조화 로거 적용
+  app.useLogger(app.get(Logger));
+
+  // 보안 헤더
+  app.use(helmet());
+
+  // gzip 응답 압축
+  app.use(compression());
+
+  // 정상 종료 (SIGTERM 시 Prisma disconnect 등 클린업)
+  app.enableShutdownHooks();
 
   app.setGlobalPrefix('api');
 
   // 글로벌 예외 필터
   app.useGlobalFilters(new GlobalExceptionFilter());
-
-  // 글로벌 로깅 인터셉터
-  app.useGlobalInterceptors(new LoggingInterceptor());
 
   // 유효성 검증 파이프
   app.useGlobalPipes(
@@ -45,6 +55,8 @@ async function bootstrap() {
 
   const port = process.env.BACKEND_PORT || 3000;
   await app.listen(port);
+
+  const logger = app.get(Logger);
   logger.log(`ETP Backend running on http://localhost:${port}`);
   logger.log(`Swagger docs: http://localhost:${port}/api/docs`);
   logger.log(`Health check: http://localhost:${port}/api/health`);

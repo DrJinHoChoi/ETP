@@ -2,11 +2,13 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useTokenStore } from '../store/tokenStore';
 import { useAuthStore } from '../store/authStore';
+import type { WebSocketEventName, IWebSocketEventMap } from '@etp/shared';
 
 let socket: Socket | null = null;
 
 function getSocket() {
   if (!socket) {
+    const token = localStorage.getItem('token');
     socket = io('/events', {
       transports: ['websocket'],
       autoConnect: false,
@@ -14,21 +16,13 @@ function getSocket() {
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
+      auth: { token },
     });
   }
   return socket;
 }
 
-export type WebSocketEvent =
-  | 'trade:matched'
-  | 'order:updated'
-  | 'meter:reading'
-  | 'settlement:completed'
-  | 'stats:update'
-  | 'price:update'
-  | 'rec:update';
-
-const WS_EVENTS: WebSocketEvent[] = [
+const WS_EVENTS: WebSocketEventName[] = [
   'trade:matched',
   'order:updated',
   'meter:reading',
@@ -85,14 +79,17 @@ export function useWebSocket() {
     };
   }, [isAuthenticated, userId, fetchBalance]);
 
-  const on = useCallback((event: WebSocketEvent, handler: (data: any) => void) => {
+  const on = useCallback(<E extends WebSocketEventName>(
+    event: E,
+    handler: (data: IWebSocketEventMap[E]) => void,
+  ) => {
     if (!listenersRef.current.has(event)) {
       listenersRef.current.set(event, new Set());
     }
-    listenersRef.current.get(event)!.add(handler);
+    listenersRef.current.get(event)!.add(handler as (data: any) => void);
 
     return () => {
-      listenersRef.current.get(event)?.delete(handler);
+      listenersRef.current.get(event)?.delete(handler as (data: any) => void);
     };
   }, []);
 
@@ -103,13 +100,16 @@ export function useWebSocket() {
  * 특정 WebSocket 이벤트를 구독하는 편의 훅.
  * 컴포넌트 마운트 시 자동 구독, 언마운트 시 자동 해제.
  */
-export function useSocketEvent(event: WebSocketEvent, handler: (data: any) => void) {
+export function useSocketEvent<E extends WebSocketEventName>(
+  event: E,
+  handler: (data: IWebSocketEventMap[E]) => void,
+) {
   const { on } = useWebSocket();
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
 
   useEffect(() => {
-    const stableHandler = (data: any) => handlerRef.current(data);
+    const stableHandler = (data: IWebSocketEventMap[E]) => handlerRef.current(data);
     const unsub = on(event, stableHandler);
     return unsub;
   }, [on, event]);

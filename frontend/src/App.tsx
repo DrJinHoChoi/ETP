@@ -4,6 +4,7 @@ import { useAuthStore } from './store/authStore';
 import { ToastProvider } from './components/ui/Toast';
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
+import RouteErrorBoundary from './components/RouteErrorBoundary';
 import Login from './pages/Login';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -14,6 +15,7 @@ const Wallet = lazy(() => import('./pages/Wallet'));
 const PriceOracle = lazy(() => import('./pages/PriceOracle'));
 const RECMarketplace = lazy(() => import('./pages/RECMarketplace'));
 const Admin = lazy(() => import('./pages/Admin'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -45,15 +47,17 @@ function App() {
               </PrivateRoute>
             }
           >
-            <Route index element={<Suspense fallback={<PageLoader />}><Dashboard /></Suspense>} />
-            <Route path="trading" element={<Suspense fallback={<PageLoader />}><Trading /></Suspense>} />
-            <Route path="metering" element={<Suspense fallback={<PageLoader />}><Metering /></Suspense>} />
-            <Route path="settlement" element={<Suspense fallback={<PageLoader />}><Settlement /></Suspense>} />
-            <Route path="wallet" element={<Suspense fallback={<PageLoader />}><Wallet /></Suspense>} />
-            <Route path="price-oracle" element={<Suspense fallback={<PageLoader />}><PriceOracle /></Suspense>} />
-            <Route path="rec-marketplace" element={<Suspense fallback={<PageLoader />}><RECMarketplace /></Suspense>} />
-            <Route path="admin" element={<Suspense fallback={<PageLoader />}><Admin /></Suspense>} />
+            <Route index element={<RouteErrorBoundary><Suspense fallback={<PageLoader />}><Dashboard /></Suspense></RouteErrorBoundary>} />
+            <Route path="trading" element={<RouteErrorBoundary><Suspense fallback={<PageLoader />}><Trading /></Suspense></RouteErrorBoundary>} />
+            <Route path="metering" element={<RouteErrorBoundary><Suspense fallback={<PageLoader />}><Metering /></Suspense></RouteErrorBoundary>} />
+            <Route path="settlement" element={<RouteErrorBoundary><Suspense fallback={<PageLoader />}><Settlement /></Suspense></RouteErrorBoundary>} />
+            <Route path="wallet" element={<RouteErrorBoundary><Suspense fallback={<PageLoader />}><Wallet /></Suspense></RouteErrorBoundary>} />
+            <Route path="price-oracle" element={<RouteErrorBoundary><Suspense fallback={<PageLoader />}><PriceOracle /></Suspense></RouteErrorBoundary>} />
+            <Route path="rec-marketplace" element={<RouteErrorBoundary><Suspense fallback={<PageLoader />}><RECMarketplace /></Suspense></RouteErrorBoundary>} />
+            <Route path="admin" element={<RouteErrorBoundary><Suspense fallback={<PageLoader />}><Admin /></Suspense></RouteErrorBoundary>} />
+            <Route path="*" element={<Suspense fallback={<PageLoader />}><NotFound /></Suspense>} />
           </Route>
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </ToastProvider>
     </ErrorBoundary>
