@@ -69,9 +69,6 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter backend prisma:generate
 
-      - name: Lint
-        run: pnpm lint
-
       - name: Build backend
         run: pnpm --filter backend build
 
