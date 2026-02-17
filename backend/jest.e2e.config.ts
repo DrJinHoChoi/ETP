@@ -10,7 +10,6 @@ const config: Config = {
   testEnvironment: 'node',
   moduleNameMapper: {
     '^@etp/shared(.*)$': '<rootDir>/../shared/src$1',
-    '^uuid$': '<rootDir>/src/__mocks__/uuid.ts',
   },
   testTimeout: 30000,
 };
