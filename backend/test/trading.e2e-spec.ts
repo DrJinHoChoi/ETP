@@ -51,6 +51,14 @@ describe('Trading (e2e)', () => {
         organization: 'E2E소비기업',
       });
     consumerToken = consumerRes.body.accessToken;
+
+    // DID 발급 (DIDAuthGuard 통과용 — register 시 DID 자동발급 실패 대비)
+    await request(app.getHttpServer())
+      .post('/api/auth/did/issue')
+      .set('Authorization', `Bearer ${supplierToken}`);
+    await request(app.getHttpServer())
+      .post('/api/auth/did/issue')
+      .set('Authorization', `Bearer ${consumerToken}`);
   });
 
   afterAll(async () => {

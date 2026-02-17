@@ -55,6 +55,14 @@ describe('Settlement (e2e)', () => {
       });
     consumerToken = consumerRes.body.accessToken;
     consumerId = consumerRes.body.user.id;
+
+    // DID 발급 (DIDAuthGuard 통과용 — register 시 DID 자동발급 실패 대비)
+    await request(app.getHttpServer())
+      .post('/api/auth/did/issue')
+      .set('Authorization', `Bearer ${supplierToken}`);
+    await request(app.getHttpServer())
+      .post('/api/auth/did/issue')
+      .set('Authorization', `Bearer ${consumerToken}`);
   });
 
   afterAll(async () => {
@@ -296,7 +304,11 @@ describe('Settlement (e2e)', () => {
         });
       const thirdToken = thirdRes.body.accessToken;
 
-      // Create a different trade for the non-party test
+      // DID 발급 (DIDAuthGuard 통과용)
+      await request(app.getHttpServer())
+        .post('/api/auth/did/issue')
+        .set('Authorization', `Bearer ${thirdToken}`);
+
       // File dispute from third-party on the existing disputed trade
       return request(app.getHttpServer())
         .post(`/api/settlement/dispute/${disputeTradeId}`)
