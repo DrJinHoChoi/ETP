@@ -42,6 +42,13 @@ model User {
   supplierCerts   RECCertificate[] @relation("SupplierCerts")
   consumerCerts   RECCertificate[] @relation("ConsumerCerts")
 
+  // EPC 토큰 관계
+  tokenBalance    TokenBalance?
+  tokenTxFrom     TokenTransaction[] @relation("TokenTxFrom")
+  tokenTxTo       TokenTransaction[] @relation("TokenTxTo")
+  issuedRECTokens RECToken[]         @relation("RECTokenIssuer")
+  ownedRECTokens  RECToken[]         @relation("RECTokenOwner")
+
   @@map("users")
 }
 
@@ -93,10 +100,11 @@ model Order {
   userId       String       @map("user_id")
   type         OrderType
   energySource EnergySource @map("energy_source")
-  quantity     Float        // kWh
-  price        Float        // KRW per kWh
-  remainingQty Float        @map("remaining_qty")
-  status       OrderStatus  @default(PENDING)
+  quantity        Float           // kWh
+  price           Float           // KRW or EPC per kWh
+  remainingQty    Float           @map("remaining_qty")
+  paymentCurrency PaymentCurrency @default(KRW) @map("payment_currency")
+  status          OrderStatus     @default(PENDING)
   validFrom    DateTime     @map("valid_from")
   validUntil   DateTime     @map("valid_until")
   createdAt    DateTime     @default(now()) @map("created_at")
@@ -127,10 +135,11 @@ model Trade {
   buyerId      String       @map("buyer_id")
   sellerId     String       @map("seller_id")
   energySource EnergySource @map("energy_source")
-  quantity     Float        // kWh
-  price        Float        // KRW per kWh
-  totalAmount  Float        @map("total_amount")
-  status       TradeStatus  @default(MATCHED)
+  quantity        Float           // kWh
+  price           Float           // KRW or EPC per kWh
+  totalAmount     Float           @map("total_amount")
+  paymentCurrency PaymentCurrency @default(KRW) @map("payment_currency")
+  status          TradeStatus     @default(MATCHED)
   txHash       String?      @map("tx_hash")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
@@ -182,12 +191,14 @@ model Settlement {
   tradeId   String           @unique @map("trade_id")
   buyerId   String           @map("buyer_id")
   sellerId  String           @map("seller_id")
-  amount    Float            // KRW
-  fee       Float            @default(0)
-  netAmount Float            @map("net_amount")
-  status    SettlementStatus @default(PENDING)
-  txHash    String?          @map("tx_hash")
-  settledAt DateTime?        @map("settled_at")
+  amount          Float            // KRW or EPC
+  fee             Float            @default(0)
+  netAmount       Float            @map("net_amount")
+  paymentCurrency PaymentCurrency  @default(KRW) @map("payment_currency")
+  epcPrice        Float?           @map("epc_price") // EPC basket price at settlement time
+  status          SettlementStatus @default(PENDING)
+  txHash          String?          @map("tx_hash")
+  settledAt       DateTime?        @map("settled_at")
   createdAt DateTime         @default(now()) @map("created_at")
 
   trade  Trade @relation(fields: [tradeId], references: [id])
@@ -215,7 +226,133 @@ model RECCertificate {
   supplier User  @relation("SupplierCerts", fields: [supplierId], references: [id])
   consumer User  @relation("ConsumerCerts", fields: [consumerId], references: [id])
 
+  recToken RECToken?
+
   @@map("rec_certificates")
+}
+
+// ========== EPC 토큰 ==========
+
+enum TokenTxType {
+  MINT
+  BURN
+  TRANSFER
+  LOCK
+  UNLOCK
+}
+
+enum PriceSource {
+  EIA
+  ENTSOE
+  KPX
+}
+
+enum PaymentCurrency {
+  KRW
+  EPC
+}
+
+enum RECTokenStatus {
+  ACTIVE
+  TRANSFERRED
+  RETIRED
+}
+
+model TokenBalance {
+  id            String   @id @default(uuid())
+  userId        String   @unique @map("user_id")
+  balance       Float    @default(0)
+  lockedBalance Float    @default(0) @map("locked_balance")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("token_balances")
+}
+
+model TokenTransaction {
+  id        String      @id @default(uuid())
+  type      TokenTxType
+  fromId    String?     @map("from_id")
+  toId      String?     @map("to_id")
+  amount    Float
+  reason    String?
+  refId     String?     @map("ref_id")
+  txHash    String?     @map("tx_hash")
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  fromUser User? @relation("TokenTxFrom", fields: [fromId], references: [id])
+  toUser   User? @relation("TokenTxTo", fields: [toId], references: [id])
+
+  @@index([fromId])
+  @@index([toId])
+  @@index([type])
+  @@index([refId])
+  @@map("token_transactions")
+}
+
+// ========== 가격 오라클 ==========
+
+model PriceOracle {
+  id        String      @id @default(uuid())
+  source    PriceSource
+  price     Float
+  priceUsd  Float       @map("price_usd")
+  currency  String
+  region    String?
+  timestamp DateTime
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  @@index([source, timestamp])
+  @@map("price_oracle")
+}
+
+model PriceBasket {
+  id               String   @id @default(uuid())
+  weightedAvgPrice Float    @map("weighted_avg_price")
+  eiaPrice         Float?   @map("eia_price")
+  eiaWeight        Float?   @map("eia_weight")
+  entsoePrice      Float?   @map("entsoe_price")
+  entsoeWeight     Float?   @map("entsoe_weight")
+  kpxPrice         Float?   @map("kpx_price")
+  kpxWeight        Float?   @map("kpx_weight")
+  isStale          Boolean  @default(false) @map("is_stale")
+  txHash           String?  @map("tx_hash")
+  timestamp        DateTime
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([timestamp])
+  @@map("price_baskets")
+}
+
+// ========== REC 토큰 (NFT) ==========
+
+model RECToken {
+  id           String         @id @default(uuid())
+  certId       String?        @unique @map("cert_id")
+  tradeId      String?        @map("trade_id")
+  issuerId     String         @map("issuer_id")
+  ownerId      String         @map("owner_id")
+  energySource EnergySource   @map("energy_source")
+  quantity     Float
+  vintage      String
+  location     String?
+  status       RECTokenStatus @default(ACTIVE)
+  issuedAt     DateTime       @default(now()) @map("issued_at")
+  validUntil   DateTime       @map("valid_until")
+  retiredAt    DateTime?      @map("retired_at")
+  retiredBy    String?        @map("retired_by")
+  txHash       String?        @map("tx_hash")
+  metadataHash String?        @map("metadata_hash")
+
+  issuer      User            @relation("RECTokenIssuer", fields: [issuerId], references: [id])
+  owner       User            @relation("RECTokenOwner", fields: [ownerId], references: [id])
+  certificate RECCertificate? @relation(fields: [certId], references: [id])
+
+  @@index([ownerId, status])
+  @@index([issuerId])
+  @@index([status])
+  @@map("rec_tokens")
 }
 
 // ========== 블록체인 트랜잭션 ==========
@@ -225,6 +362,11 @@ enum BlockchainTxType {
   TRADE
   SETTLEMENT
   METERING
+  EPC_MINT
+  EPC_BURN
+  EPC_TRANSFER
+  EPC_PRICE
+  REC_TOKEN
 }
 
 enum BlockchainTxStatus {

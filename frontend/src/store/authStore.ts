@@ -1,12 +1,20 @@
 import { create } from 'zustand';
 import { authService, type LoginRequest, type RegisterRequest } from '../services/auth.service';
 
+interface DIDCredential {
+  did: string;
+  publicKey: string;
+  status: 'ACTIVE' | 'REVOKED';
+  issuedAt: string;
+}
+
 interface User {
   id: string;
   email: string;
   name: string;
   role: string;
   organization: string;
+  didCredential?: DIDCredential | null;
 }
 
 interface AuthState {
@@ -19,6 +27,7 @@ interface AuthState {
   register: (data: RegisterRequest) => Promise<void>;
   logout: () => void;
   loadFromStorage: () => void;
+  refreshProfile: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -39,6 +48,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         isAuthenticated: true,
         isLoading: false,
       });
+      // 프로필 로드 (DID 정보 포함)
+      authService.getProfile().then((profile) => {
+        set({ user: profile });
+      }).catch(() => {});
     } catch (err: any) {
       set({
         error: err.response?.data?.message || '로그인에 실패했습니다',
@@ -59,6 +72,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         isAuthenticated: true,
         isLoading: false,
       });
+      // 프로필 로드 (DID 정보 포함)
+      authService.getProfile().then((profile) => {
+        set({ user: profile });
+      }).catch(() => {});
     } catch (err: any) {
       set({
         error: err.response?.data?.message || '회원가입에 실패했습니다',
@@ -84,6 +101,15 @@ export const useAuthStore = create<AuthState>((set) => ({
           localStorage.removeItem('token');
           set({ token: null, isAuthenticated: false });
         });
+    }
+  },
+
+  refreshProfile: async () => {
+    try {
+      const profile = await authService.getProfile();
+      set({ user: profile });
+    } catch {
+      // ignore
     }
   },
 }));

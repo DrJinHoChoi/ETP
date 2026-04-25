@@ -1,18 +1,29 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api');
 
+  // 글로벌 예외 필터
+  app.useGlobalFilters(new GlobalExceptionFilter());
+
+  // 글로벌 로깅 인터셉터
+  app.useGlobalInterceptors(new LoggingInterceptor());
+
+  // 유효성 검증 파이프
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      transformOptions: { enableImplicitConversion: true },
     }),
   );
 
@@ -21,6 +32,7 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // Swagger API 문서
   const config = new DocumentBuilder()
     .setTitle('ETP API')
     .setDescription('RE100 전력 중개거래 플랫폼 API')
@@ -33,7 +45,8 @@ async function bootstrap() {
 
   const port = process.env.BACKEND_PORT || 3000;
   await app.listen(port);
-  console.log(`ETP Backend running on http://localhost:${port}`);
-  console.log(`Swagger docs: http://localhost:${port}/api/docs`);
+  logger.log(`ETP Backend running on http://localhost:${port}`);
+  logger.log(`Swagger docs: http://localhost:${port}/api/docs`);
+  logger.log(`Health check: http://localhost:${port}/api/health`);
 }
 bootstrap();

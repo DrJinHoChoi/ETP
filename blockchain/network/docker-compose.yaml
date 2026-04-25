@@ -1,0 +1,235 @@
+version: '3.7'
+
+volumes:
+  orderer.etp.com:
+  peer0.supplier.etp.com:
+  peer1.supplier.etp.com:
+  peer0.consumer.etp.com:
+  peer1.consumer.etp.com:
+  peer0.admin.etp.com:
+
+networks:
+  etp-network:
+    name: etp-network
+
+services:
+  # ========== Orderer ==========
+  orderer.etp.com:
+    container_name: orderer.etp.com
+    image: hyperledger/fabric-orderer:2.5
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LISTENPORT=7050
+      - ORDERER_GENERAL_LOCALMSPID=OrdererOrgMSP
+      - ORDERER_GENERAL_LOCALMSPDIR=/var/hyperledger/orderer/msp
+      - ORDERER_GENERAL_TLS_ENABLED=true
+      - ORDERER_GENERAL_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_GENERAL_CLUSTER_CLIENTCERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_CLUSTER_CLIENTPRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_CLUSTER_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_GENERAL_BOOTSTRAPMETHOD=none
+      - ORDERER_CHANNELPARTICIPATION_ENABLED=true
+      - ORDERER_ADMIN_TLS_ENABLED=true
+      - ORDERER_ADMIN_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_ADMIN_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_ADMIN_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_ADMIN_TLS_CLIENTROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_ADMIN_LISTENADDRESS=0.0.0.0:7053
+    working_dir: /root
+    command: orderer
+    volumes:
+      - ./crypto-config/ordererOrganizations/etp.com/orderers/orderer.etp.com/msp:/var/hyperledger/orderer/msp
+      - ./crypto-config/ordererOrganizations/etp.com/orderers/orderer.etp.com/tls:/var/hyperledger/orderer/tls
+      - orderer.etp.com:/var/hyperledger/production/orderer
+    ports:
+      - 7050:7050
+      - 7053:7053
+    networks:
+      - etp-network
+
+  # ========== Supplier Org Peers ==========
+  peer0.supplier.etp.com:
+    container_name: peer0.supplier.etp.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer0.supplier.etp.com
+      - CORE_PEER_ADDRESS=peer0.supplier.etp.com:7051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:7051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.supplier.etp.com:7052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.supplier.etp.com:8051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.supplier.etp.com:7051
+      - CORE_PEER_LOCALMSPID=SupplierOrgMSP
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ./crypto-config/peerOrganizations/supplier.etp.com/peers/peer0.supplier.etp.com/msp:/etc/hyperledger/fabric/msp
+      - ./crypto-config/peerOrganizations/supplier.etp.com/peers/peer0.supplier.etp.com/tls:/etc/hyperledger/fabric/tls
+      - peer0.supplier.etp.com:/var/hyperledger/production
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 7051:7051
+    networks:
+      - etp-network
+
+  peer1.supplier.etp.com:
+    container_name: peer1.supplier.etp.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer1.supplier.etp.com
+      - CORE_PEER_ADDRESS=peer1.supplier.etp.com:8051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:8051
+      - CORE_PEER_CHAINCODEADDRESS=peer1.supplier.etp.com:8052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:8052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.supplier.etp.com:7051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.supplier.etp.com:8051
+      - CORE_PEER_LOCALMSPID=SupplierOrgMSP
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ./crypto-config/peerOrganizations/supplier.etp.com/peers/peer1.supplier.etp.com/msp:/etc/hyperledger/fabric/msp
+      - ./crypto-config/peerOrganizations/supplier.etp.com/peers/peer1.supplier.etp.com/tls:/etc/hyperledger/fabric/tls
+      - peer1.supplier.etp.com:/var/hyperledger/production
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 8051:8051
+    networks:
+      - etp-network
+
+  # ========== Consumer Org Peers ==========
+  peer0.consumer.etp.com:
+    container_name: peer0.consumer.etp.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer0.consumer.etp.com
+      - CORE_PEER_ADDRESS=peer0.consumer.etp.com:9051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:9051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.consumer.etp.com:9052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:9052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.consumer.etp.com:10051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.consumer.etp.com:9051
+      - CORE_PEER_LOCALMSPID=ConsumerOrgMSP
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ./crypto-config/peerOrganizations/consumer.etp.com/peers/peer0.consumer.etp.com/msp:/etc/hyperledger/fabric/msp
+      - ./crypto-config/peerOrganizations/consumer.etp.com/peers/peer0.consumer.etp.com/tls:/etc/hyperledger/fabric/tls
+      - peer0.consumer.etp.com:/var/hyperledger/production
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 9051:9051
+    networks:
+      - etp-network
+
+  peer1.consumer.etp.com:
+    container_name: peer1.consumer.etp.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer1.consumer.etp.com
+      - CORE_PEER_ADDRESS=peer1.consumer.etp.com:10051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:10051
+      - CORE_PEER_CHAINCODEADDRESS=peer1.consumer.etp.com:10052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:10052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.consumer.etp.com:9051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.consumer.etp.com:10051
+      - CORE_PEER_LOCALMSPID=ConsumerOrgMSP
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ./crypto-config/peerOrganizations/consumer.etp.com/peers/peer1.consumer.etp.com/msp:/etc/hyperledger/fabric/msp
+      - ./crypto-config/peerOrganizations/consumer.etp.com/peers/peer1.consumer.etp.com/tls:/etc/hyperledger/fabric/tls
+      - peer1.consumer.etp.com:/var/hyperledger/production
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 10051:10051
+    networks:
+      - etp-network
+
+  # ========== Admin Org Peer ==========
+  peer0.admin.etp.com:
+    container_name: peer0.admin.etp.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=peer0.admin.etp.com
+      - CORE_PEER_ADDRESS=peer0.admin.etp.com:11051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:11051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.admin.etp.com:11052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:11052
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.admin.etp.com:11051
+      - CORE_PEER_LOCALMSPID=AdminOrgMSP
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ./crypto-config/peerOrganizations/admin.etp.com/peers/peer0.admin.etp.com/msp:/etc/hyperledger/fabric/msp
+      - ./crypto-config/peerOrganizations/admin.etp.com/peers/peer0.admin.etp.com/tls:/etc/hyperledger/fabric/tls
+      - peer0.admin.etp.com:/var/hyperledger/production
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 11051:11051
+    networks:
+      - etp-network
+
+  # ========== CLI ==========
+  cli:
+    container_name: etp-cli
+    image: hyperledger/fabric-tools:2.5
+    tty: true
+    stdin_open: true
+    environment:
+      - GOPATH=/opt/gopath
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=cli
+      - CORE_PEER_ADDRESS=peer0.supplier.etp.com:7051
+      - CORE_PEER_LOCALMSPID=SupplierOrgMSP
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/supplier.etp.com/peers/peer0.supplier.etp.com/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/supplier.etp.com/peers/peer0.supplier.etp.com/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/supplier.etp.com/peers/peer0.supplier.etp.com/tls/ca.crt
+      - CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/supplier.etp.com/users/Admin@supplier.etp.com/msp
+    working_dir: /opt/gopath/src/github.com/hyperledger/fabric/peer
+    command: /bin/bash
+    volumes:
+      - ./crypto-config:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/
+      - ../chaincode:/opt/gopath/src/github.com/chaincode
+      - ./scripts:/opt/gopath/src/github.com/hyperledger/fabric/peer/scripts/
+      - ./channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/peer/channel-artifacts
+    networks:
+      - etp-network
+    depends_on:
+      - orderer.etp.com
+      - peer0.supplier.etp.com
+      - peer0.consumer.etp.com
+      - peer0.admin.etp.com

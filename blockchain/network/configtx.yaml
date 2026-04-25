@@ -1,0 +1,180 @@
+---
+Organizations:
+  - &OrdererOrg
+    Name: OrdererOrg
+    ID: OrdererOrgMSP
+    MSPDir: crypto-config/ordererOrganizations/etp.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('OrdererOrgMSP.member')"
+      Writers:
+        Type: Signature
+        Rule: "OR('OrdererOrgMSP.member')"
+      Admins:
+        Type: Signature
+        Rule: "OR('OrdererOrgMSP.admin')"
+
+  - &SupplierOrg
+    Name: SupplierOrg
+    ID: SupplierOrgMSP
+    MSPDir: crypto-config/peerOrganizations/supplier.etp.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('SupplierOrgMSP.admin', 'SupplierOrgMSP.peer', 'SupplierOrgMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('SupplierOrgMSP.admin', 'SupplierOrgMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('SupplierOrgMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('SupplierOrgMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.supplier.etp.com
+        Port: 7051
+
+  - &ConsumerOrg
+    Name: ConsumerOrg
+    ID: ConsumerOrgMSP
+    MSPDir: crypto-config/peerOrganizations/consumer.etp.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('ConsumerOrgMSP.admin', 'ConsumerOrgMSP.peer', 'ConsumerOrgMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('ConsumerOrgMSP.admin', 'ConsumerOrgMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('ConsumerOrgMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('ConsumerOrgMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.consumer.etp.com
+        Port: 9051
+
+  - &AdminOrg
+    Name: AdminOrg
+    ID: AdminOrgMSP
+    MSPDir: crypto-config/peerOrganizations/admin.etp.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('AdminOrgMSP.admin', 'AdminOrgMSP.peer', 'AdminOrgMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('AdminOrgMSP.admin', 'AdminOrgMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('AdminOrgMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('AdminOrgMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.admin.etp.com
+        Port: 11051
+
+Capabilities:
+  Channel: &ChannelCapabilities
+    V2_0: true
+  Orderer: &OrdererCapabilities
+    V2_0: true
+  Application: &ApplicationCapabilities
+    V2_0: true
+
+Application: &ApplicationDefaults
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    LifecycleEndorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+    Endorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+  Capabilities:
+    <<: *ApplicationCapabilities
+
+Orderer: &OrdererDefaults
+  OrdererType: etcdraft
+  Addresses:
+    - orderer.etp.com:7050
+  EtcdRaft:
+    Consenters:
+      - Host: orderer.etp.com
+        Port: 7050
+        ClientTLSCert: crypto-config/ordererOrganizations/etp.com/orderers/orderer.etp.com/tls/server.crt
+        ServerTLSCert: crypto-config/ordererOrganizations/etp.com/orderers/orderer.etp.com/tls/server.crt
+  BatchTimeout: 2s
+  BatchSize:
+    MaxMessageCount: 10
+    AbsoluteMaxBytes: 99 MB
+    PreferredMaxBytes: 512 KB
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    BlockValidation:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+
+Channel: &ChannelDefaults
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+  Capabilities:
+    <<: *ChannelCapabilities
+
+Profiles:
+  ETPOrdererGenesis:
+    <<: *ChannelDefaults
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *OrdererOrg
+      Capabilities:
+        <<: *OrdererCapabilities
+    Consortiums:
+      ETPConsortium:
+        Organizations:
+          - *SupplierOrg
+          - *ConsumerOrg
+          - *AdminOrg
+
+  TradingChannel:
+    Consortium: ETPConsortium
+    <<: *ChannelDefaults
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *SupplierOrg
+        - *ConsumerOrg
+        - *AdminOrg
+      Capabilities:
+        <<: *ApplicationCapabilities

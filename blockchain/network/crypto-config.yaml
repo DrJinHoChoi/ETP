@@ -1,0 +1,39 @@
+OrdererOrgs:
+  - Name: OrdererOrg
+    Domain: etp.com
+    EnableNodeOUs: true
+    Specs:
+      - Hostname: orderer
+        SANS:
+          - localhost
+
+PeerOrgs:
+  - Name: SupplierOrg
+    Domain: supplier.etp.com
+    EnableNodeOUs: true
+    Template:
+      Count: 2
+      SANS:
+        - localhost
+    Users:
+      Count: 1
+
+  - Name: ConsumerOrg
+    Domain: consumer.etp.com
+    EnableNodeOUs: true
+    Template:
+      Count: 2
+      SANS:
+        - localhost
+    Users:
+      Count: 1
+
+  - Name: AdminOrg
+    Domain: admin.etp.com
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+      SANS:
+        - localhost
+    Users:
+      Count: 1

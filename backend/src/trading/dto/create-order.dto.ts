@@ -1,6 +1,6 @@
-import { IsEnum, IsNumber, IsDateString, Min } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
-import { OrderType, EnergySource } from '@prisma/client';
+import { IsEnum, IsNumber, IsDateString, IsOptional, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { OrderType, EnergySource, PaymentCurrency } from '@prisma/client';
 
 export class CreateOrderDto {
   @ApiProperty({ enum: OrderType, example: OrderType.BUY })
@@ -16,7 +16,7 @@ export class CreateOrderDto {
   @Min(1)
   quantity: number;
 
-  @ApiProperty({ example: 120, description: 'KRW/kWh 단위' })
+  @ApiProperty({ example: 120, description: 'KRW or EPC per kWh' })
   @IsNumber()
   @Min(0)
   price: number;
@@ -28,4 +28,9 @@ export class CreateOrderDto {
   @ApiProperty({ example: '2025-03-31T23:59:59Z' })
   @IsDateString()
   validUntil: string;
+
+  @ApiPropertyOptional({ enum: PaymentCurrency, default: PaymentCurrency.KRW })
+  @IsOptional()
+  @IsEnum(PaymentCurrency)
+  paymentCurrency?: PaymentCurrency;
 }
